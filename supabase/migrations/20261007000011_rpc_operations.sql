@@ -28,7 +28,7 @@ end $$;
 create or replace function public.staff_create_appointment(
   p_shop_id uuid, p_barber_id uuid, p_service_ids uuid[], p_starts_at timestamptz,
   p_client_id uuid default null, p_client jsonb default null, p_notes text default null,
-  p_source public.booking_source default 'staff', p_force boolean default false)
+  p_source public.booking_source default 'staff', p_force boolean default false, p_rebooked_from uuid default null)
 returns jsonb language plpgsql security definer set search_path = public, pg_temp as $$
 declare v_client uuid := p_client_id; v_res jsonb; q record; v_buffer int; v_appt uuid;
 begin
@@ -52,9 +52,11 @@ begin
 
   begin
     insert into public.appointments (shop_id, barber_id, client_id, kind, status, source, starts_at, ends_at,
-                                     buffer_minutes, notes, expected_price_cents, booked_by)
-    values (p_shop_id, p_barber_id, v_client, 'appointment', 'BOOKED', coalesce(p_source, 'staff'), p_starts_at,
-            p_starts_at + make_interval(mins => q.duration_minutes), v_buffer, p_notes, q.price_cents, auth.uid())
+                                     buffer_minutes, notes, expected_price_cents, booked_by, rebooked_from_id)
+    values (p_shop_id, p_barber_id, v_client, 'appointment', 'BOOKED',
+            case when p_rebooked_from is not null then 'rebook' else coalesce(p_source, 'staff') end, p_starts_at,
+            p_starts_at + make_interval(mins => q.duration_minutes), v_buffer, p_notes, q.price_cents, auth.uid(),
+            (select id from public.appointments where id = p_rebooked_from and client_id = v_client))
     returning id into v_appt;
   exception when exclusion_violation then
     perform app.fail('SLOT_TAKEN');

@@ -510,9 +510,9 @@ language sql stable security definer set search_path = public, pg_temp as $$
 $$;
 
 create or replace function public.my_favorite_barbers()
-returns table (barber_id uuid, barber_name text, photo_url text, title text, shop_id uuid, shop_name text, shop_slug text, barber_slug text)
+returns table (barber_id uuid, barber_name text, photo_url text, title text, shop_id uuid, shop_name text, shop_slug text, barber_slug text, timezone text)
 language sql stable security definer set search_path = public, pg_temp as $$
-  select b.id, b.display_name, b.photo_url, b.title, s.id, s.name, s.slug, b.slug
+  select b.id, b.display_name, b.photo_url, b.title, s.id, s.name, s.slug, b.slug, s.timezone
     from public.client_favorites f
     join public.barbers b on b.id = f.barber_id and b.deleted_at is null and b.status = 'active'
     join public.shops s on s.id = b.shop_id and s.is_published

@@ -5,9 +5,9 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc -b && vite build",
+    "build": "tsc -p tsconfig.json && vite build",
     "preview": "vite preview",
-    "typecheck": "tsc -b",
+    "typecheck": "tsc -p tsconfig.json",
     "test": "vitest run",
     "test:db": "node scripts/test-db.mjs",
     "test:e2e": "playwright test"
