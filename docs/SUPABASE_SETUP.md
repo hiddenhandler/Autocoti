@@ -1,8 +1,8 @@
-# Setting up Supabase for Autocoti
+# Setting up Supabase for BarberNGo
 
 ## 1. Create the project
 1. Go to https://supabase.com/dashboard → **New project**.
-2. Pick a name (e.g. `autocoti`), a strong database password (save it), and the region closest to your shops.
+2. Pick a name (e.g. `barberngo`), a strong database password (save it), and the region closest to your shops.
 3. Wait ~2 minutes for it to provision.
 
 ## 2. Create the database (one paste)

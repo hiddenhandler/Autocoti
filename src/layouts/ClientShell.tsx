@@ -1,5 +1,5 @@
 import { NavLink, Navigate, Outlet, useLocation } from 'react-router'
-import { CalendarCheck, Home, Scissors, User } from 'lucide-react'
+import { CalendarCheck, CalendarPlus, Home, User } from 'lucide-react'
 import { useAuth } from '@/lib/auth'
 import { cx, Logo } from '@/components/ui'
 import { PageSpinner } from '@/router'
@@ -8,7 +8,7 @@ import { SetupNotice } from '@/components/SetupNotice'
 
 const ITEMS = [
   { to: '/me', label: 'Home', icon: Home, end: true },
-  { to: '/me/book', label: 'Book', icon: Scissors },
+  { to: '/me/book', label: 'Book', icon: CalendarPlus },
   { to: '/me/appointments', label: 'Appointments', icon: CalendarCheck },
   { to: '/me/profile', label: 'Profile', icon: User },
 ]

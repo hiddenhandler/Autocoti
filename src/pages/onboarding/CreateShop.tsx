@@ -142,7 +142,7 @@ export default function CreateShop() {
       if (error) throw error
       await qc.invalidateQueries({ queryKey: ['workspaces'] })
       try {
-        localStorage.setItem('autocoti.workspace', shopId!)
+        localStorage.setItem('barberngo.workspace', shopId!)
       } catch {
         /* ignore */
       }

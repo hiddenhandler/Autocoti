@@ -41,7 +41,7 @@ const adapters: Partial<Record<Notification['channel'], Adapter>> = {
       method: 'POST',
       headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        from: Deno.env.get('EMAIL_FROM') ?? 'Autocoti <bookings@autocoti.app>',
+        from: Deno.env.get('EMAIL_FROM') ?? 'BarberNGo <bookings@barberngo.app>',
         to: [n.to_address],
         subject: msg.subject,
         text: msg.text,

@@ -1,11 +1,10 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-theme="dark">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-    <meta name="theme-color" content="#0E0D0B" media="(prefers-color-scheme: dark)" />
-    <meta name="theme-color" content="#F6F3EE" media="(prefers-color-scheme: light)" />
-    <meta name="description" content="Autocoti — the operating system for your barbershop. Bookings, barbers, clients, payments and business intelligence in one place." />
+    <meta name="theme-color" content="#111418" />
+    <meta name="description" content="BarberNGo — the operating system for modern barbershops. Appointments, clients, payments, POS, staff and analytics in one platform." />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <link rel="manifest" href="/manifest.webmanifest" />
@@ -13,8 +12,16 @@
     <link rel="apple-touch-icon" href="/icons/icon-192.png" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700&family=Instrument+Serif:ital@0;1&display=swap" rel="stylesheet" />
-    <title>Autocoti — Run your barbershop</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Sora:wght@500;600;700&display=swap" rel="stylesheet" />
+    <script>
+      // Apply the saved theme before first paint (dark is the brand default).
+      try {
+        var t = localStorage.getItem('barberngo.theme') || 'dark'
+        if (t === 'system') document.documentElement.removeAttribute('data-theme')
+        else document.documentElement.setAttribute('data-theme', t)
+      } catch (e) {}
+    </script>
+    <title>BarberNGo — Run Your Shop. Grow Your Business.</title>
   </head>
   <body>
     <div id="root"></div>

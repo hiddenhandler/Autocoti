@@ -1,4 +1,4 @@
-# Autocoti — architecture & product reference
+# BarberNGo — architecture & product reference
 
 ## 1. System audit (starting point)
 

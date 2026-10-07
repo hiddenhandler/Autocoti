@@ -1,28 +1,30 @@
 @import "tailwindcss";
 
 /* -----------------------------------------------------------------------------
-   Autocoti design tokens
-   Warm, high-contrast, premium. Dark is the signature look; light is warm paper.
+   BarberNGo design tokens
+   Premium barbershop × modern SaaS. Dark charcoal is the signature look;
+   electric blue is the language of action and intelligence.
    --accent is overridable per shop (owner-configurable brand colour).
 ----------------------------------------------------------------------------- */
 :root {
-  --bg: #f6f3ee;
+  --bg: #f5f7fa;
   --surface: #ffffff;
-  --surface-2: #efebe4;
-  --surface-3: #e6e0d6;
-  --border: #e2dbd0;
-  --border-strong: #cfc6b8;
-  --text: #17140f;
-  --muted: #6f675b;
-  --faint: #9c9384;
-  --accent: #b08a45;
-  --accent-ink: #17140f;
-  --accent-soft: color-mix(in oklab, var(--accent) 14%, transparent);
-  --success: #2f7d4f;
+  --surface-2: #eef1f5;
+  --surface-3: #e3e8ee;
+  --border: #e1e6ec;
+  --border-strong: #cbd3dc;
+  --text: #111418;
+  --muted: #5b6573;
+  --faint: #8a94a3;
+  --accent: #1683ff;
+  --accent-ink: #ffffff;
+  --glow: #35a2ff;
+  --accent-soft: color-mix(in oklab, var(--accent) 12%, transparent);
+  --success: #1f8a5b;
   --warning: #b7791f;
-  --danger: #b4412f;
-  --info: #3a6ea5;
-  --shadow: 0 1px 2px rgb(23 20 15 / 0.04), 0 8px 24px -12px rgb(23 20 15 / 0.12);
+  --danger: #d23f3f;
+  --info: #1683ff;
+  --shadow: 0 1px 2px rgb(17 20 24 / 0.04), 0 8px 24px -12px rgb(17 20 24 / 0.14);
   --series-1: #2a78d6;
   --series-2: #eb6834;
   --series-3: #1baf7a;
@@ -31,28 +33,29 @@
   --series-6: #008300;
   --series-7: #4a3aa7;
   --series-8: #e34948;
-  --grid: #e9e3da;
+  --grid: #e6eaef;
   color-scheme: light;
 }
 
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --bg: #0e0d0b;
-    --surface: #161512;
-    --surface-2: #1e1c18;
-    --surface-3: #282520;
-    --border: #2a2722;
-    --border-strong: #3a362f;
-    --text: #f4efe6;
-    --muted: #a39b8d;
-    --faint: #6e675c;
-    --accent: #c8a25c;
-    --accent-ink: #120f0a;
-    --success: #5bb07f;
-    --warning: #e0a948;
-    --danger: #e0705c;
-    --info: #7aa7d6;
-    --shadow: 0 1px 0 rgb(255 255 255 / 0.03) inset, 0 12px 32px -16px rgb(0 0 0 / 0.6);
+    --bg: #111418;
+    --surface: #1b2026;
+    --surface-2: #222831;
+    --surface-3: #2b323c;
+    --border: #262d36;
+    --border-strong: #363f4a;
+    --text: #f5f7fa;
+    --muted: #9aa4b2;
+    --faint: #67717f;
+    --accent: #1683ff;
+    --accent-ink: #ffffff;
+    --glow: #35a2ff;
+    --success: #34c38f;
+    --warning: #f0b247;
+    --danger: #f06a6a;
+    --info: #35a2ff;
+    --shadow: 0 1px 0 rgb(255 255 255 / 0.03) inset, 0 16px 40px -20px rgb(0 0 0 / 0.7);
     --series-1: #3987e5;
     --series-2: #d95926;
     --series-3: #199e70;
@@ -61,28 +64,29 @@
     --series-6: #008300;
     --series-7: #9085e9;
     --series-8: #e66767;
-    --grid: #26231e;
+    --grid: #232a33;
     color-scheme: dark;
   }
 }
 
 :root[data-theme="dark"] {
-  --bg: #0e0d0b;
-  --surface: #161512;
-  --surface-2: #1e1c18;
-  --surface-3: #282520;
-  --border: #2a2722;
-  --border-strong: #3a362f;
-  --text: #f4efe6;
-  --muted: #a39b8d;
-  --faint: #6e675c;
-  --accent: #c8a25c;
-  --accent-ink: #120f0a;
-  --success: #5bb07f;
-  --warning: #e0a948;
-  --danger: #e0705c;
-  --info: #7aa7d6;
-  --shadow: 0 1px 0 rgb(255 255 255 / 0.03) inset, 0 12px 32px -16px rgb(0 0 0 / 0.6);
+  --bg: #111418;
+  --surface: #1b2026;
+  --surface-2: #222831;
+  --surface-3: #2b323c;
+  --border: #262d36;
+  --border-strong: #363f4a;
+  --text: #f5f7fa;
+  --muted: #9aa4b2;
+  --faint: #67717f;
+  --accent: #1683ff;
+  --accent-ink: #ffffff;
+  --glow: #35a2ff;
+  --success: #34c38f;
+  --warning: #f0b247;
+  --danger: #f06a6a;
+  --info: #35a2ff;
+  --shadow: 0 1px 0 rgb(255 255 255 / 0.03) inset, 0 16px 40px -20px rgb(0 0 0 / 0.7);
   --series-1: #3987e5;
   --series-2: #d95926;
   --series-3: #199e70;
@@ -91,7 +95,7 @@
   --series-6: #008300;
   --series-7: #9085e9;
   --series-8: #e66767;
-  --grid: #26231e;
+  --grid: #232a33;
   color-scheme: dark;
 }
 
@@ -112,8 +116,8 @@
   --color-warning: var(--warning);
   --color-danger: var(--danger);
   --color-info: var(--info);
-  --font-sans: "Inter Tight", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
-  --font-display: "Instrument Serif", ui-serif, Georgia, serif;
+  --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-display: "Sora", "Inter", ui-sans-serif, system-ui, sans-serif;
   --shadow-card: var(--shadow);
   --radius-xl: 14px;
   --radius-2xl: 20px;
@@ -140,8 +144,9 @@ body {
 
 .display {
   font-family: var(--font-display);
-  font-weight: 400;
-  letter-spacing: -0.01em;
+  font-weight: 600;
+  letter-spacing: -0.035em;
+  line-height: 1.02;
 }
 
 .eyebrow {
@@ -239,13 +244,17 @@ body {
   animation: pulse-ring 1.8s ease-out infinite;
 }
 
-/* barber-pole stripe used sparingly as a brand motif */
+/* Brand motion line: electric blue into blue glow (used sparingly). */
 .pole {
-  background: repeating-linear-gradient(
-    -45deg,
-    var(--accent) 0 6px,
-    transparent 6px 12px
-  );
+  background: linear-gradient(90deg, var(--accent), var(--glow));
+}
+
+/* Intelligence / AI highlight text. */
+.text-glow {
+  background: linear-gradient(90deg, var(--accent), var(--glow));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
 }
 
 @media (prefers-reduced-motion: reduce) {

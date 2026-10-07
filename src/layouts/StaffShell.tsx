@@ -1,8 +1,8 @@
 import { useEffect, useState, type ComponentType } from 'react'
 import { Link, NavLink, Navigate, Outlet, useLocation } from 'react-router'
 import {
-  BarChart3, Bell, CalendarDays, ChevronsUpDown, ClipboardList, CreditCard, DoorOpen, Gauge, Home, ListOrdered, LogOut,
-  Megaphone, Menu, Monitor, Moon, Scissors, Search, Settings, ShieldCheck, Sparkles, Sun, Timer, User, Users, Wallet, X, Clock,
+  Bell, CalendarCheck, CalendarDays, ChartLine, ChevronsUpDown, Clock, Contact, DoorOpen, Home, Layers, LayoutDashboard,
+  ListOrdered, LogOut, Megaphone, Menu, Monitor, Moon, Search, Settings, ShieldCheck, Sparkles, Sun, Timer, User, Users, Wallet, X,
 } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
 import { useAuth, useWorkspace, useWorkspaces, WorkspaceProvider } from '@/lib/auth'
@@ -27,12 +27,12 @@ interface NavItem {
 
 const NAV: { group: string; items: NavItem[] }[] = [
   {
-    group: 'Run the shop',
+    group: 'Operations',
     items: [
-      { to: '/app/dashboard', label: 'Dashboard', icon: Gauge, perm: 'reports.shop' },
+      { to: '/app/dashboard', label: 'Overview', icon: LayoutDashboard, perm: 'reports.shop' },
       { to: '/app/today', label: 'Today', icon: Timer, barber: true },
       { to: '/app/calendar', label: 'Calendar', icon: CalendarDays },
-      { to: '/app/appointments', label: 'Appointments', icon: ClipboardList, perm: 'calendar.all' },
+      { to: '/app/appointments', label: 'Appointments', icon: CalendarCheck, perm: 'calendar.all' },
       { to: '/app/walk-ins', label: 'Walk-ins', icon: DoorOpen, feature: 'walk_ins' },
       { to: '/app/waitlist', label: 'Waitlist', icon: ListOrdered, perm: 'waitlist.manage', feature: 'waitlist' },
     ],
@@ -41,19 +41,22 @@ const NAV: { group: string; items: NavItem[] }[] = [
     group: 'People',
     items: [
       { to: '/app/clients', label: 'Clients', icon: Users },
-      { to: '/app/barbers', label: 'Barbers', icon: Scissors, perm: 'staff.manage' },
-      { to: '/app/services', label: 'Services', icon: ClipboardList, perm: 'services.manage' },
+      { to: '/app/barbers', label: 'Barbers', icon: Contact, perm: 'staff.manage' },
+      { to: '/app/services', label: 'Services', icon: Layers, perm: 'services.manage' },
     ],
   },
   {
-    group: 'Money & growth',
+    group: 'Business',
     items: [
-      { to: '/app/payments', label: 'Payments', icon: CreditCard, perm: 'payments.view' },
+      { to: '/app/payments', label: 'Payments', icon: Wallet, perm: 'payments.view' },
       { to: '/app/earnings', label: 'My earnings', icon: Wallet, barber: true },
-      { to: '/app/reports', label: 'Reports', icon: BarChart3, perm: 'reports.shop' },
-      { to: '/app/insights', label: 'Insights & AI', icon: Sparkles, perm: 'reports.shop' },
+      { to: '/app/reports', label: 'Analytics', icon: ChartLine, perm: 'reports.shop' },
       { to: '/app/marketing', label: 'Marketing', icon: Megaphone, perm: 'marketing.manage' },
     ],
+  },
+  {
+    group: 'Intelligence',
+    items: [{ to: '/app/insights', label: 'AI Assistant', icon: Sparkles, perm: 'reports.shop' }],
   },
   {
     group: 'Shop',
@@ -172,7 +175,7 @@ function SidebarContent({ onSearch }: { onSearch: () => void }) {
             onClick={() => setSwitcher((s) => !s)}
             className="flex w-full items-center gap-2.5 rounded-xl border border-line bg-surface-2/60 px-3 py-2.5 text-left transition hover:bg-surface-2"
           >
-            <span className="flex size-8 items-center justify-center rounded-lg text-sm font-bold" style={{ background: ws.accent_color, color: '#111' }}>
+            <span className="flex size-8 items-center justify-center rounded-lg text-sm font-bold" style={{ background: ws.accent_color, color: '#fff' }}>
               {ws.shop_name[0]}
             </span>
             <span className="min-w-0 flex-1">
@@ -307,7 +310,7 @@ function BottomNav({ barber }: { barber: boolean }) {
         { to: '/app/calendar', label: 'Calendar', icon: CalendarDays },
         ...(barber ? [{ to: '/app/today', label: 'My chair', icon: Timer }] : [{ to: '/app/walk-ins', label: 'Walk-ins', icon: DoorOpen }]),
         { to: '/app/clients', label: 'Clients', icon: Users },
-        ...(can('reports.shop') ? [{ to: '/app/reports', label: 'Reports', icon: BarChart3 }] : [{ to: '/app/payments', label: 'Payments', icon: CreditCard }]),
+        ...(can('reports.shop') ? [{ to: '/app/reports', label: 'Analytics', icon: ChartLine }] : [{ to: '/app/payments', label: 'Payments', icon: Wallet }]),
       ]
   return (
     <nav className="no-print safe-bottom fixed inset-x-0 bottom-0 z-30 border-t border-line bg-surface/92 backdrop-blur-md lg:hidden">

@@ -12,7 +12,7 @@
 import { test, expect, type Browser, type Page } from '@playwright/test'
 import pg from 'pg'
 
-const db = new pg.Pool({ database: process.env.E2E_DB ?? 'autocoti_e2e', user: process.env.PGUSER ?? 'root', host: '/var/run/postgresql' })
+const db = new pg.Pool({ database: process.env.E2E_DB ?? 'barberngo_e2e', user: process.env.PGUSER ?? 'root', host: '/var/run/postgresql' })
 const run = Date.now().toString(36)
 const owner = { name: 'Ana Owner', email: `owner-${run}@e2e.dev`, password: 'correct-horse-9' }
 const barber = { name: 'Luis Barber', email: `luis-${run}@e2e.dev`, password: 'correct-horse-9' }
@@ -44,8 +44,8 @@ async function newPage(browser: Browser) {
 
 test('owner creates and publishes a shop', async ({ page }) => {
   await page.goto('/')
-  await expect(page.getByRole('heading', { name: /Run your barbershop/i })).toBeVisible()
-  await page.getByRole('link', { name: 'START FREE' }).first().click()
+  await expect(page.getByRole('heading', { level: 1, name: /Run Your Shop/i })).toBeVisible()
+  await page.getByRole('link', { name: 'Start Free' }).first().click()
   await signUp(page, owner)
 
   // Onboarding wizard

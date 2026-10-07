@@ -38,7 +38,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await supabase.auth.signOut()
     qc.clear()
     try {
-      localStorage.removeItem('autocoti.workspace')
+      localStorage.removeItem('barberngo.workspace')
     } catch {
       /* storage unavailable */
     }
@@ -79,7 +79,7 @@ const WorkspaceContext = createContext<WorkspaceCtx | null>(null)
 export function WorkspaceProvider({ workspaces, children }: { workspaces: Workspace[]; children: ReactNode }) {
   const [activeId, setActiveId] = useState<string>(() => {
     try {
-      return localStorage.getItem('autocoti.workspace') ?? ''
+      return localStorage.getItem('barberngo.workspace') ?? ''
     } catch {
       return ''
     }
@@ -120,7 +120,7 @@ export function WorkspaceProvider({ workspaces, children }: { workspaces: Worksp
       switchTo: (id) => {
         setActiveId(id)
         try {
-          localStorage.setItem('autocoti.workspace', id)
+          localStorage.setItem('barberngo.workspace', id)
         } catch {
           /* ignore */
         }

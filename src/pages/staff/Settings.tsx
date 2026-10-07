@@ -121,11 +121,11 @@ function ShopSection() {
           <Field label="Cover photo URL"><Input type="url" value={f.cover_url ?? ''} onChange={set('cover_url')} /></Field>
           <Field label="Accent colour">
             <div className="flex items-center gap-2">
-              <input type="color" aria-label="Accent colour" value={f.accent_color ?? '#C8A25C'} onChange={set('accent_color')} className="h-11 w-14 cursor-pointer rounded-xl border border-line bg-surface p-1" />
+              <input type="color" aria-label="Accent colour" value={f.accent_color ?? '#1683FF'} onChange={set('accent_color')} className="h-11 w-14 cursor-pointer rounded-xl border border-line bg-surface p-1" />
               <Input value={f.accent_color ?? ''} onChange={set('accent_color')} />
             </div>
           </Field>
-          <Field label="Custom domain" hint="Point a CNAME to your Autocoti domain"><Input disabled={!hasFeature('custom_branding')} value={f.custom_domain ?? ''} onChange={set('custom_domain')} placeholder="book.yourshop.com" /></Field>
+          <Field label="Custom domain" hint="Point a CNAME to your BarberNGo domain"><Input disabled={!hasFeature('custom_branding')} value={f.custom_domain ?? ''} onChange={set('custom_domain')} placeholder="book.yourshop.com" /></Field>
           <Field label="Gallery photo URLs" hint="One per line" className="sm:col-span-2">
             <Textarea rows={3} value={(f.gallery_urls ?? []).join('\n')} onChange={(e) => setF({ ...f, gallery_urls: e.target.value.split('\n').map((x) => x.trim()).filter(Boolean) })} />
           </Field>

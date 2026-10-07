@@ -32,6 +32,7 @@ export default function OwnerDashboard() {
         <div>
           <div className="eyebrow">{new Date().toLocaleDateString(undefined, { timeZone: tz, weekday: 'long', month: 'long', day: 'numeric' })}</div>
           <h1 className="display mt-2 text-[44px] leading-none sm:text-[56px]">{greeting(tz)}{firstName ? `, ${firstName}` : ''}.</h1>
+          {t && <p className="mt-3 text-muted">{todayLine(t.bookings.total, t.bookings.upcoming)}</p>}
         </div>
         <Link to="/app/calendar"><Button variant="secondary" icon={<CalendarClock className="size-4" />}>Open calendar</Button></Link>
       </div>
@@ -46,7 +47,7 @@ export default function OwnerDashboard() {
             <Stat big label="Revenue" value={money(t.summary.net_revenue_cents, { cents: false })} sub={t.revenue.tips_cents ? `+ ${money(t.revenue.tips_cents, { cents: false })} tips` : 'service revenue'} />
             <Stat big label="Bookings" value={t.bookings.total} sub={`${t.bookings.upcoming} still to come`} />
             <Stat big label="Completed" value={t.bookings.completed} sub={t.bookings.no_shows ? `${t.bookings.no_shows} no-show${t.bookings.no_shows > 1 ? 's' : ''}` : 'no no-shows'} />
-            <Stat big label="Utilization" value={pct(t.utilization.utilization)} sub={`target ${t.utilization.target}%`} />
+            <Stat big label="Occupancy" value={pct(t.utilization.utilization)} sub={`target ${t.utilization.target}%`} />
             <Stat big label="Avg ticket" value={money(t.summary.avg_ticket_cents, { cents: false })} sub={`${t.summary.tickets} paid`} />
             <Stat big label="Avg cut" value={t.cut_time.avg_actual_minutes ? minutes(t.cut_time.avg_actual_minutes) : '—'} sub={t.cut_time.count ? `${t.cut_time.count} timed` : 'no timed cuts yet'} />
           </Card>
@@ -260,4 +261,11 @@ function SetupChecklist() {
       </div>
     </Card>
   )
+}
+
+/** Factual one-liner under the greeting — derived from today's real bookings. */
+function todayLine(total: number, upcoming: number) {
+  if (!total) return 'No appointments on the books yet today.'
+  if (upcoming) return `${upcoming} of ${total} appointment${total > 1 ? 's' : ''} still to come today.`
+  return `All ${total} of today’s appointment${total > 1 ? 's are' : ' is'} done.`
 }

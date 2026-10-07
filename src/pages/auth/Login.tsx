@@ -130,8 +130,8 @@ export default function Login() {
       <div className="relative hidden overflow-hidden border-l border-line bg-surface lg:block">
         <div className="pole absolute inset-y-0 left-0 w-2 opacity-60" />
         <div className="flex h-full flex-col justify-end p-14">
-          <p className="display max-w-md text-5xl leading-[1.05]">“I stopped guessing. I know exactly how every chair is doing.”</p>
-          <p className="mt-6 text-sm text-muted">The operating system for your barbershop.</p>
+          <p className="display max-w-md text-5xl leading-[1.05]">Run Your Shop.<br /><span className="text-glow">Grow Your Business.</span></p>
+          <p className="mt-6 text-sm text-muted">Everything your barbershop needs. One platform.</p>
         </div>
       </div>
     </div>

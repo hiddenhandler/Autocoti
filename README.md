@@ -1,6 +1,8 @@
-# Autocoti — the operating system for your barbershop
+# BarberNGo — Run Your Shop. Grow Your Business.
 
-Bookings, barbers, clients, payments and business intelligence in one place.
+The operating system for modern barbershops: appointments, clients, payments, staff, analytics and AI in one platform — with full POS, inventory and Dominican Republic electronic invoicing (e-CF) on the roadmap.
+
+**BarberNGo — Everything your barbershop needs. One platform.**
 Three experiences, each built around one question:
 
 | Who | Question | Where |
@@ -38,7 +40,7 @@ Schedule `dispatch-notifications` every minute (Supabase scheduled functions, or
 | `npm run test:db` | 40 tests against real Postgres, running as anon / users / barbers / owners through RLS: availability engine (gap-fill, DST, closures), concurrent double-booking, tenant + barber isolation, roles, timer, checkout, tax, promo, refunds, tiered commission, walk-ins, waitlist race, analytics, retention, audit log |
 | `npm run e2e:stack && npm run test:e2e` | The full journey in a real browser against GoTrue + PostgREST + Postgres: owner creates shop → adds barber & service → barber accepts invite → client books with real availability → barber starts/finishes cut, records payment + tip, rebooks → owner sees revenue, cut time, utilization, rebooking, client |
 
-`npm run test:db` needs a local Postgres (it creates `autocoti_test`); the e2e stack needs Docker.
+`npm run test:db` needs a local Postgres (it creates `barberngo_test`); the e2e stack needs Docker.
 
 ## Docs
 

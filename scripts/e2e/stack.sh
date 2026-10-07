@@ -4,15 +4,15 @@
 # Usage: scripts/e2e/stack.sh up | down
 set -euo pipefail
 cd "$(dirname "$0")/../.."
-DB=${E2E_DB:-autocoti_e2e}
+DB=${E2E_DB:-barberngo_e2e}
 SECRET=${E2E_JWT_SECRET:-super-secret-jwt-token-with-at-least-32-characters}
 GOTRUE_IMAGE=${GOTRUE_IMAGE:-supabase/gotrue:v2.170.0}
 POSTGREST_IMAGE=${POSTGREST_IMAGE:-postgrest/postgrest:v12.2.3}
 
 down() {
-  docker rm -f autocoti-gotrue autocoti-postgrest >/dev/null 2>&1 || true
-  [ -f /tmp/autocoti-gateway.pid ] && kill "$(cat /tmp/autocoti-gateway.pid)" 2>/dev/null || true
-  rm -f /tmp/autocoti-gateway.pid
+  docker rm -f barberngo-gotrue barberngo-postgrest >/dev/null 2>&1 || true
+  [ -f /tmp/barberngo-gateway.pid ] && kill "$(cat /tmp/barberngo-gateway.pid)" 2>/dev/null || true
+  rm -f /tmp/barberngo-gateway.pid
 }
 
 up() {
@@ -21,7 +21,7 @@ up() {
   sed "s/current_database_placeholder/$DB/" scripts/e2e/roles.sql | psql -v ON_ERROR_STOP=1 -q -d "$DB"
 
   # GoTrue creates and migrates the auth schema itself.
-  docker run -d --name autocoti-gotrue --network host \
+  docker run -d --name barberngo-gotrue --network host \
     -e GOTRUE_API_HOST=127.0.0.1 -e PORT=9999 -e API_EXTERNAL_URL=http://localhost:54321/auth/v1 \
     -e GOTRUE_DB_DRIVER=postgres \
     -e "GOTRUE_DB_DATABASE_URL=postgres://supabase_auth_admin:e2e-auth-admin@127.0.0.1:5432/$DB?search_path=auth&sslmode=disable" \
@@ -35,13 +35,13 @@ up() {
     curl -sf http://127.0.0.1:9999/health >/dev/null 2>&1 && break
     sleep 1
   done
-  curl -sf http://127.0.0.1:9999/health >/dev/null || { docker logs autocoti-gotrue | tail -30; exit 1; }
+  curl -sf http://127.0.0.1:9999/health >/dev/null || { docker logs barberngo-gotrue | tail -30; exit 1; }
 
   for f in supabase/migrations/*.sql; do
     psql -v ON_ERROR_STOP=1 -q -d "$DB" -f "$f" >/dev/null || { echo "migration failed: $f"; exit 1; }
   done
 
-  docker run -d --name autocoti-postgrest --network host \
+  docker run -d --name barberngo-postgrest --network host \
     -e "PGRST_DB_URI=postgres://authenticator:e2e-authenticator@127.0.0.1:5432/$DB" \
     -e PGRST_DB_SCHEMAS=public -e PGRST_DB_ANON_ROLE=anon -e PGRST_JWT_SECRET="$SECRET" \
     -e PGRST_SERVER_PORT=3000 -e PGRST_SERVER_HOST=127.0.0.1 -e PGRST_DB_EXTRA_SEARCH_PATH=public,extensions \
@@ -51,8 +51,8 @@ up() {
     sleep 1
   done
 
-  E2E_JWT_SECRET="$SECRET" nohup node scripts/e2e/gateway.mjs >/tmp/autocoti-gateway.log 2>&1 &
-  echo $! >/tmp/autocoti-gateway.pid
+  E2E_JWT_SECRET="$SECRET" nohup node scripts/e2e/gateway.mjs >/tmp/barberngo-gateway.log 2>&1 &
+  echo $! >/tmp/barberngo-gateway.pid
   sleep 1
   node scripts/e2e/keys.mjs "$SECRET" > .env.e2e
   echo "stack up: gateway http://localhost:54321 (keys in .env.e2e)"
