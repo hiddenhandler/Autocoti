@@ -1,0 +1,109 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+
+:root {
+  --bg: #f6f5f2;
+  --surface: #ffffff;
+  --surface-2: #f0efeb;
+  --border: #e2e0da;
+  --text: #121211;
+  --text-2: #55534e;
+  --text-3: #85827b;
+  --accent: #b4462a;
+  --accent-ink: #ffffff;
+  --accent-soft: #f6e3dc;
+  --good: #0f7a2e;
+  --good-soft: #def3e3;
+  --warn: #8a5a00;
+  --warn-soft: #fbefd2;
+  --bad: #b42323;
+  --bad-soft: #f9dede;
+  /* data viz: single-hue blue (sequential) */
+  --viz-1: #2a78d6;
+  --viz-0: #eef4fc;
+  --viz-max: #0d366b;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #121211;
+    --surface: #1b1b1a;
+    --surface-2: #242422;
+    --border: #33322f;
+    --text: #f4f3ef;
+    --text-2: #c3c2b7;
+    --text-3: #8f8d85;
+    --accent: #e0714f;
+    --accent-ink: #160b07;
+    --accent-soft: #3a211a;
+    --good: #5fd27e;
+    --good-soft: #143220;
+    --warn: #f0bf55;
+    --warn-soft: #3a2d10;
+    --bad: #f07a7a;
+    --bad-soft: #3b1818;
+    --viz-1: #3987e5;
+    --viz-0: #20252c;
+    --viz-max: #cde2fb;
+}
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-line: var(--border);
+  --color-ink: var(--text);
+  --color-ink-2: var(--text-2);
+  --color-ink-3: var(--text-3);
+  --color-accent: var(--accent);
+  --color-accent-ink: var(--accent-ink);
+  --color-accent-soft: var(--accent-soft);
+  --color-good: var(--good);
+  --color-good-soft: var(--good-soft);
+  --color-warn: var(--warn);
+  --color-warn-soft: var(--warn-soft);
+  --color-bad: var(--bad);
+  --color-bad-soft: var(--bad-soft);
+  --color-viz: var(--viz-1);
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+}
+
+@utility card {
+  @apply rounded-2xl border border-line bg-surface p-4 sm:p-5;
+}
+@utility btn {
+  @apply inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition active:scale-[.98] disabled:opacity-50;
+}
+@utility btn-primary {
+  @apply btn bg-accent text-accent-ink hover:opacity-90;
+}
+@utility btn-ghost {
+  @apply btn border border-line bg-surface text-ink hover:bg-surface-2;
+}
+@utility btn-sm {
+  @apply px-3 py-1.5 text-xs;
+}
+@utility input {
+  @apply w-full rounded-xl border border-line bg-surface px-3 py-2.5 text-sm text-ink outline-none placeholder:text-ink-3 focus:border-accent;
+}
+@utility label {
+  @apply mb-1 block text-xs font-medium text-ink-2;
+}
+@utility chip {
+  @apply inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium;
+}
+@utility h1 {
+  @apply text-2xl font-bold tracking-tight;
+}
+@utility h2 {
+  @apply text-lg font-semibold;
+}
+@utility muted {
+  @apply text-sm text-ink-2;
+}
