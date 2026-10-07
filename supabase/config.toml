@@ -1,0 +1,28 @@
+# Supabase CLI project config (supabase start / supabase db push / supabase functions deploy)
+project_id = "autocoti"
+
+[api]
+port = 54321
+schemas = ["public"]
+extra_search_path = ["public", "extensions"]
+max_rows = 1000
+
+[db]
+port = 54322
+major_version = 16
+
+[auth]
+site_url = "http://localhost:5173"
+additional_redirect_urls = ["http://localhost:5173/**"]
+jwt_expiry = 3600
+enable_signup = true
+
+[auth.email]
+enable_signup = true
+enable_confirmations = true
+
+[functions.assistant]
+verify_jwt = true
+
+[functions.dispatch-notifications]
+verify_jwt = false # authorised by the service-role bearer check inside the function
