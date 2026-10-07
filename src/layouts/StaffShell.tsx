@@ -7,7 +7,7 @@ import {
 import { useQuery } from '@tanstack/react-query'
 import { BarberChairIcon } from '@/components/BarberChair'
 import { useAuth, useWorkspace, useWorkspaces, WorkspaceProvider } from '@/lib/auth'
-import { isConfigured, supabase } from '@/lib/supabase'
+import { isConfigured, rpc, supabase } from '@/lib/supabase'
 import { Avatar, cx, IconButton, KeyHint, Logo } from '@/components/ui'
 import { PageSpinner } from '@/router'
 import { CommandPalette } from '@/components/CommandPalette'
@@ -172,6 +172,7 @@ function SidebarContent({ onSearch }: { onSearch: () => void }) {
   const groups = useNavItems()
   const { ws, all, switchTo } = useWorkspace()
   const { user, signOut } = useAuth()
+  const { data: isSystemOwner } = useQuery({ queryKey: ['am_platform_admin', user?.id], enabled: !!user, staleTime: 5 * 60_000, queryFn: () => rpc<boolean>('am_platform_admin') })
   const [switcher, setSwitcher] = useState(false)
   const [theme, setTheme] = useState<ThemePref>(getThemePref())
   return (
@@ -242,6 +243,11 @@ function SidebarContent({ onSearch }: { onSearch: () => void }) {
       </nav>
 
       <div className="border-t border-line p-3">
+        {isSystemOwner && (
+          <Link to="/admin" className="mb-2 flex items-center gap-2.5 rounded-xl border border-warning/30 bg-warning/10 px-3 py-2 text-sm font-semibold text-warning hover:bg-warning/15">
+            <ShieldCheck className="size-4" /> System owner console
+          </Link>
+        )}
         <div className="mb-2 flex items-center justify-between px-1">
           <div className="flex rounded-lg bg-surface-2 p-0.5">
             {(['light', 'system', 'dark'] as ThemePref[]).map((t) => {

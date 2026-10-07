@@ -49,6 +49,8 @@ export const router = createBrowserRouter([
       { path: '/signup', element: load(() => import('./pages/auth/Login')) },
       { path: '/auth/callback', element: load(() => import('./pages/auth/AuthCallback')) },
       { path: '/invite/:token', element: load(() => import('./pages/auth/AcceptInvite')) },
+      { path: '/claim/:token', element: load(() => import('./pages/auth/ClaimAccount')) },
+      { path: '/admin', element: load(() => import('./pages/admin/Admin')) },
       { path: '/onboarding', element: load(() => import('./pages/onboarding/CreateShop')) },
 
       // Public: every shop's own branded page (never a marketplace)

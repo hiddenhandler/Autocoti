@@ -7,6 +7,7 @@ export async function postAuthPath(intent: string | null, next: string | null): 
   if (next && next.startsWith('/') && !next.startsWith('//')) return next
   const ws = await rpc<Workspace[]>('my_workspaces').catch(() => [])
   if (ws.length) return '/app'
+  if (await rpc<boolean>('am_platform_admin').catch(() => false)) return '/admin'
   if (intent === 'owner') return '/onboarding'
   return '/me'
 }

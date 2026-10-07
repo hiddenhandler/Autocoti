@@ -61,6 +61,14 @@ const MESSAGES: Record<string, string> = {
   INVALID_MERGE: 'Those clients cannot be merged.',
   INVALID_RANGE: 'Choose a shorter date range.',
   NO_FEE: 'There is no fee to charge.',
+  ALREADY_CLAIMED: 'This account was already activated. Sign in to open it.',
+  INVITATION_EXPIRED: 'This account invitation has expired. Ask BarberNGo for a new link.',
+  EMAIL_MISMATCH: "You're signed in with a different email than this invitation was sent to.",
+  UNKNOWN_PLAN: 'Unknown plan.',
+  INVALID_MONTHS: 'Choose between 1 and 36 months.',
+  AMOUNT_REQUIRED: 'Enter the amount paid, or mark it as a gift.',
+  INVALID_KIND: 'Choose shop owner or chair owner.',
+  USE_GRANT_MONTHS: 'Use “Gift months” to gift a plan.',
 }
 
 export function errorCode(e: unknown): string | null {
