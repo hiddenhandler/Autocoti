@@ -45,8 +45,8 @@ async function newPage(browser: Browser) {
 
 test('owner creates and publishes a shop', async ({ page }) => {
   await page.goto('/')
-  await expect(page.getByRole('heading', { name: /Your shop\. Your chairs\. Your schedule\./i })).toBeVisible()
-  await page.getByRole('link', { name: 'START FREE' }).first().click()
+  await expect(page.getByRole('heading', { level: 1, name: /Run Your Shop/i })).toBeVisible()
+  await page.getByRole('link', { name: 'Start Free' }).first().click()
   await signUp(page, owner)
 
   // Onboarding wizard

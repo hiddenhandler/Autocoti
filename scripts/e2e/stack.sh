@@ -47,7 +47,8 @@ up() {
       nohup "$GOTRUE_BIN" >/tmp/barberngo-gotrue.log 2>&1 &
     echo $! >/tmp/barberngo-gotrue.pid
   else
-    docker run -d --name barberngo-gotrue --network host $(printf -- '-e %q ' "${GOTRUE_ENV[@]}") "$GOTRUE_IMAGE" >/dev/null
+    args=(); for e in "${GOTRUE_ENV[@]}"; do args+=(-e "$e"); done
+    docker run -d --name barberngo-gotrue --network host "${args[@]}" "$GOTRUE_IMAGE" >/dev/null
   fi
   for i in $(seq 1 60); do
     curl -sf http://127.0.0.1:9999/health >/dev/null 2>&1 && break
@@ -68,7 +69,8 @@ up() {
     env "${PGRST_ENV[@]}" nohup "$POSTGREST_BIN" >/tmp/barberngo-postgrest.log 2>&1 &
     echo $! >/tmp/barberngo-postgrest.pid
   else
-    docker run -d --name barberngo-postgrest --network host $(printf -- '-e %q ' "${PGRST_ENV[@]}") "$POSTGREST_IMAGE" >/dev/null
+    args=(); for e in "${PGRST_ENV[@]}"; do args+=(-e "$e"); done
+    docker run -d --name barberngo-postgrest --network host "${args[@]}" "$POSTGREST_IMAGE" >/dev/null
   fi
   for i in $(seq 1 30); do
     curl -sf http://127.0.0.1:3000/ >/dev/null 2>&1 && break

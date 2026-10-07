@@ -123,7 +123,7 @@ function ShopSection() {
           <Field label="Cover photo URL"><Input type="url" value={f.cover_url ?? ''} onChange={set('cover_url')} /></Field>
           <Field label="Accent colour">
             <div className="flex items-center gap-2">
-              <input type="color" aria-label="Accent colour" value={f.accent_color ?? '#C8A25C'} onChange={set('accent_color')} className="h-11 w-14 cursor-pointer rounded-xl border border-line bg-surface p-1" />
+              <input type="color" aria-label="Accent colour" value={f.accent_color ?? '#1683FF'} onChange={set('accent_color')} className="h-11 w-14 cursor-pointer rounded-xl border border-line bg-surface p-1" />
               <Input value={f.accent_color ?? ''} onChange={set('accent_color')} />
             </div>
           </Field>

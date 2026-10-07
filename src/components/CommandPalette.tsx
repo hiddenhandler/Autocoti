@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { useNavigate } from 'react-router'
 import { useQuery } from '@tanstack/react-query'
-import { CalendarDays, CreditCard, Plus, Scissors, Search, User, Wrench, ArrowRight } from 'lucide-react'
+import { CalendarDays, Contact, CreditCard, Layers, Plus, Search, User, ArrowRight } from 'lucide-react'
 import { rpc } from '@/lib/supabase'
 import { useWorkspace } from '@/lib/auth'
 import { cx, KeyHint, Spinner } from './ui'
@@ -16,7 +16,7 @@ interface Result {
   to?: string
 }
 
-const ICONS = { client: User, barber: Scissors, service: Wrench, appointment: CalendarDays, payment: CreditCard, action: ArrowRight }
+const ICONS = { client: User, barber: Contact, service: Layers, appointment: CalendarDays, payment: CreditCard, action: ArrowRight }
 
 export function CommandPalette({ open, onClose }: { open: boolean; onClose: () => void }) {
   const { ws, can } = useWorkspace()

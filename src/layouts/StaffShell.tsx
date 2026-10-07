@@ -1,8 +1,8 @@
 import { useEffect, useState, type ComponentType } from 'react'
 import { Link, NavLink, Navigate, Outlet, useLocation } from 'react-router'
 import {
-  Armchair, BarChart3, Bell, CalendarDays, ChevronsUpDown, ClipboardList, CreditCard, DoorOpen, Gauge, Home, Landmark, ListOrdered, LogOut,
-  Megaphone, Menu, Monitor, Moon, Package, QrCode, Scissors, Search, Settings, ShieldCheck, Sparkles, Sun, Tags, Timer, User, Users, Wallet, X, Clock,
+  Armchair, BarChart3, Bell, Contact, CalendarDays, ChevronsUpDown, ClipboardList, CreditCard, DoorOpen, Gauge, Home, Landmark, ListOrdered, LogOut,
+  Megaphone, Menu, Monitor, Moon, Package, QrCode, Search, Settings, ShieldCheck, Sparkles, Sun, Tags, Timer, User, Users, Wallet, X, Clock,
 } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
 import { useAuth, useWorkspace, useWorkspaces, WorkspaceProvider } from '@/lib/auth'
@@ -29,7 +29,7 @@ interface NavItem {
 // SHOP → CHAIRS → BARBERS → CUSTOMERS → APPOINTMENTS → PAYMENTS → ANALYTICS
 const NAV: { group: string; items: NavItem[] }[] = [
   {
-    group: 'Run the shop',
+    group: 'Operations',
     items: [
       { to: '/app/dashboard', label: 'Overview', icon: Gauge, perm: 'reports.shop' },
       { to: '/app/today', label: 'Today', icon: Timer, barber: true },
@@ -43,7 +43,7 @@ const NAV: { group: string; items: NavItem[] }[] = [
   {
     group: 'People',
     items: [
-      { to: '/app/barbers', label: 'Barbers', icon: Scissors, perm: 'staff.manage' },
+      { to: '/app/barbers', label: 'Barbers', icon: Contact, perm: 'staff.manage' },
       { to: '/app/clients', label: 'Customers', icon: Users },
       { to: '/app/services', label: 'Services & prices', icon: Tags, perm: 'services.manage' },
     ],
@@ -184,7 +184,7 @@ function SidebarContent({ onSearch }: { onSearch: () => void }) {
             onClick={() => setSwitcher((s) => !s)}
             className="flex w-full items-center gap-2.5 rounded-xl border border-line bg-surface-2/60 px-3 py-2.5 text-left transition hover:bg-surface-2"
           >
-            <span className="flex size-8 items-center justify-center rounded-lg text-sm font-bold" style={{ background: ws.accent_color, color: '#111' }}>
+            <span className="flex size-8 items-center justify-center rounded-lg text-sm font-bold" style={{ background: ws.accent_color, color: '#fff' }}>
               {ws.shop_name[0]}
             </span>
             <span className="min-w-0 flex-1">

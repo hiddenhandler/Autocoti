@@ -1,5 +1,5 @@
 import { Link } from 'react-router'
-import { CalendarCheck, Heart, RotateCcw, Scissors, Star } from 'lucide-react'
+import { CalendarCheck, Heart, RotateCcw, CalendarPlus, Star } from 'lucide-react'
 import { useAuth } from '@/lib/auth'
 import { relativeDay, time, money } from '@/lib/format'
 import { useFirstAvailable } from '../public/shared'
@@ -36,7 +36,7 @@ export default function ClientHome() {
       ) : last ? (
         <BookAgain a={last} />
       ) : (
-        <Card><EmptyState icon={<Scissors className="size-6" />} title="No appointments yet" body="Book from your barbershop's page — it'll show up here." /></Card>
+        <Card><EmptyState icon={<CalendarPlus className="size-6" />} title="No appointments yet" body="Book from your barbershop's page — it'll show up here." /></Card>
       )}
 
       {next && last && <BookAgain a={last} compact />}

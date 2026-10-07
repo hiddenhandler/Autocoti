@@ -34,6 +34,7 @@ export default function OwnerDashboard() {
         <div>
           <div className="eyebrow">{new Date().toLocaleDateString(undefined, { timeZone: tz, weekday: 'long', month: 'long', day: 'numeric' })}</div>
           <h1 className="display mt-2 text-[44px] leading-none sm:text-[56px]">{greeting(tz)}{firstName ? `, ${firstName}` : ''}.</h1>
+          {t && <p className="mt-3 text-muted">{todayLine(t.bookings.total, t.bookings.upcoming)}</p>}
         </div>
         <Link to="/app/calendar"><Button variant="secondary" icon={<CalendarClock className="size-4" />}>Open calendar</Button></Link>
       </div>
@@ -298,4 +299,11 @@ function SetupChecklist() {
       </div>
     </Card>
   )
+}
+
+/** Factual one-liner under the greeting — derived from today's real bookings. */
+function todayLine(total: number, upcoming: number) {
+  if (!total) return 'No appointments on the books yet today.'
+  if (upcoming) return `${upcoming} of ${total} appointment${total > 1 ? 's' : ''} still to come today.`
+  return `All ${total} of today’s appointment${total > 1 ? 's are' : ' is'} done.`
 }

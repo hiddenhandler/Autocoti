@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Link } from 'react-router'
 import { useQueryClient } from '@tanstack/react-query'
-import { Plus, Scissors } from 'lucide-react'
+import { Contact, Plus } from 'lucide-react'
 import { useWorkspace } from '@/lib/auth'
 import { useAnalytics, useBarbers, useServices } from '@/lib/api'
 import { rpc, supabase } from '@/lib/supabase'
@@ -25,7 +25,7 @@ export default function Barbers() {
       <PageHeader title="Barbers" subtitle={maxBarbers ? `${active.filter((b) => b.status === 'active').length} of ${maxBarbers} on your plan` : 'Last 30 days performance'}
         actions={<Button icon={<Plus className="size-4" />} onClick={() => setAdding(true)}>Add barber</Button>} />
       {isLoading ? <Skeleton className="h-64" /> : active.length === 0 ? (
-        <Card><EmptyState icon={<Scissors className="size-6" />} title="No barbers yet" body="Add your first barber to start taking bookings." action={<Button onClick={() => setAdding(true)}>Add barber</Button>} /></Card>
+        <Card><EmptyState icon={<Contact className="size-6" />} title="No barbers yet" body="Add your first barber to start taking bookings." action={<Button onClick={() => setAdding(true)}>Add barber</Button>} /></Card>
       ) : (
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
           {active.map((b) => {

@@ -478,18 +478,38 @@ export function StatusBadge({ status }: { status: string }) {
   return <Badge tone={tone}>{STATUS_LABEL[status] ?? status}</Badge>
 }
 
-export function Logo({ className, mark = false }: { className?: string; mark?: boolean }) {
+/** BarberNGo BN monogram: forward-slanted B + N with a blade-cut corner (movement + craft). */
+export function LogoMark({ size = 28, className }: { size?: number; className?: string }) {
+  const id = useId().replace(/:/g, '')
   return (
-    <span className={cx('inline-flex items-center gap-2', className)}>
-      <svg viewBox="0 0 32 32" className="size-7 shrink-0" aria-hidden>
-        <rect width="32" height="32" rx="9" fill="var(--accent)" />
-        {/* B + forward chevron: "Barber, go." */}
-        <path d="M7.5 8.6h5.6a3.4 3.4 0 0 1 0 6.8H7.5zM7.5 15.4h6.4a3.6 3.6 0 0 1 0 7.2H7.5z" stroke="var(--accent-ink)" strokeWidth="2.3" strokeLinejoin="round" fill="none" />
-        <path d="m20.6 12 3 4.2-3 4.2" stroke="var(--accent-ink)" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" fill="none" />
-      </svg>
+    <svg viewBox="0 0 64 64" width={size} height={size} className={cx('shrink-0', className)} aria-hidden>
+      <defs>
+        <linearGradient id={`bngw${id}`} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stopColor="#FFFFFF" />
+          <stop offset="1" stopColor="#C9D1DB" />
+        </linearGradient>
+        <linearGradient id={`bngb${id}`} x1="0" y1="1" x2="1" y2="0">
+          <stop offset="0" stopColor="#0B5FD6" />
+          <stop offset="0.5" stopColor="#1683FF" />
+          <stop offset="1" stopColor="#35A2FF" />
+        </linearGradient>
+      </defs>
+      <rect width="64" height="64" rx="15" fill="#111418" />
+      {/* B (white) whose lower bowl becomes the N — a forward arrow (blue). */}
+      <path fill={`url(#bngw${id})`} d="M10 13 H31 A10 10 0 0 1 31 33 H26 L21.5 28 H31 A5 5 0 0 0 31 18 H16 V45 H27.5 L32 50 H10 Z" />
+      <path fill={`url(#bngb${id})`} d="M18 33 H27 L38.5 45 L45 27 H41 L55 13 L55 28 L51.5 25 L43.5 50 H36 Z" />
+    </svg>
+  )
+}
+
+/** Full logo: [BN] BARBERNGO. `mark` renders the compact icon only. */
+export function Logo({ className, mark = false, size = 28 }: { className?: string; mark?: boolean; size?: number }) {
+  return (
+    <span className={cx('inline-flex items-center gap-2.5', className)} aria-label="BarberNGo">
+      <LogoMark size={size} />
       {!mark && (
-        <span className="text-[17px] font-extrabold tracking-tight">
-          BARBER<span className="text-accent">NGO</span>
+        <span className="font-display text-[15px] font-semibold uppercase tracking-[0.12em]">
+          Barber<span className="text-accent">NGo</span>
         </span>
       )}
     </span>

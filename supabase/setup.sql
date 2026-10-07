@@ -1,10 +1,14 @@
--- Autocoti: complete database setup for a Supabase project.
+-- BarberNGo: complete database setup for a Supabase project.
 -- Paste into Supabase Dashboard -> SQL Editor -> New query -> Run (run once, on a fresh project).
 -- Generated from supabase/migrations/*.sql by scripts/build-setup-sql.sh — do not edit by hand.
+-- Runs as one transaction: if anything fails, nothing is created. If a previous attempt left
+-- objects behind ("already exists" errors), run supabase/reset.sql first.
+
+begin;
 
 -- ===================== 20261007000001_foundation.sql =====================
 -- =============================================================================
--- Autocoti — foundation: extensions, private schema, enums, shared helpers
+-- BarberNGo — foundation: extensions, private schema, enums, shared helpers
 -- =============================================================================
 -- Conventions
 --   * Money is stored as integer cents (bigint) — never floats.
@@ -227,7 +231,7 @@ create table public.shops (
   logo_url text,
   cover_url text,
   gallery_urls text[] not null default '{}',
-  accent_color text not null default '#C8A25C' check (accent_color ~ '^#[0-9A-Fa-f]{6}$'),
+  accent_color text not null default '#1683FF' check (accent_color ~ '^#[0-9A-Fa-f]{6}$'),
   custom_domain text unique,
   is_published boolean not null default false,
   created_at timestamptz not null default now(),
@@ -383,7 +387,7 @@ create table public.barbers (
   specialties text[] not null default '{}',
   photo_url text,
   instagram text,
-  color text not null default '#C8A25C' check (color ~ '^#[0-9A-Fa-f]{6}$'),
+  color text not null default '#1683FF' check (color ~ '^#[0-9A-Fa-f]{6}$'),
   status text not null default 'active' check (status in ('active', 'suspended', 'archived')),
   accepts_online_booking boolean not null default true,
   buffer_minutes int check (buffer_minutes between 0 and 120),   -- NULL = shop default
@@ -4615,7 +4619,7 @@ end $$;
 
 insert into public.notification_templates (shop_id, event, channel, subject, body) values
   (null, 'campaign', 'email', '{{subject}}', '{{body}}'),
-  (null, 'staff.invitation', 'email', 'You''re invited to join {{shop_name}} on Autocoti', 'You''ve been invited to join {{shop_name}} as {{role}}. Accept here: {{invite_url}}');
+  (null, 'staff.invitation', 'email', 'You''re invited to join {{shop_name}} on BarberNGo', 'You''ve been invited to join {{shop_name}} as {{role}}. Accept here: {{invite_url}}');
 
 -- ===================== 20261007000015_realtime.sql =====================
 -- Live calendars: stream appointment and walk-in changes (RLS still applies
@@ -4627,3 +4631,1823 @@ begin
   end if;
 end $$;
 
+-- ===================== 20261007000016_chairs_inventory_finance.sql =====================
+-- =============================================================================
+-- BarberNGo — chairs, employee vs chair owner, chair rent, inventory,
+-- expenses and finance.
+--
+--   SHOP → CHAIRS → BARBERS → CUSTOMERS → APPOINTMENTS → PAYMENTS → ANALYTICS
+--
+-- * A barber is either an EMPLOYEE (the shop controls schedule, services,
+--   pricing and pays a commission) or a CHAIR OWNER (an independent business
+--   inside the shop: keeps 100% of service revenue, controls own schedule,
+--   services and prices, pays chair rent, runs own inventory and expenses).
+-- * Chair owners' inventory and expenses are private to them. The shop owner
+--   sees shop-level information: chairs, live status, appointments, rent.
+-- * Stock only moves through RPCs, so stock_qty always equals the movement log.
+-- =============================================================================
+
+create type public.barber_type as enum ('employee', 'chair_owner');
+
+alter table public.barbers
+  add column barber_type public.barber_type not null default 'employee',
+  -- Live presence set by the barber ("Take a break", "Go offline").
+  -- 'auto' = status is derived from schedule + calendar.
+  add column presence text not null default 'auto' check (presence in ('auto', 'break', 'offline')),
+  add column presence_until timestamptz,
+  add column presence_updated_at timestamptz;
+
+alter table public.shop_settings
+  add column product_commission_bps int not null default 1000 check (product_commission_bps between 0 and 10000),
+  add column barbers_can_set_prices boolean not null default false,       -- employees editing their own prices
+  add column employees_manage_schedule boolean not null default true,     -- employees editing their weekly hours
+  add column sms_channel text not null default 'whatsapp' check (sms_channel in ('none', 'sms', 'whatsapp')),
+  add column queue_almost_ready_minutes int not null default 10 check (queue_almost_ready_minutes between 2 and 60),
+  add column rent_due_days int not null default 3 check (rent_due_days between 0 and 31);
+
+-- Services a chair owner created for themselves (NULL = shop service).
+alter table public.services add column owner_barber_id uuid references public.barbers (id) on delete cascade;
+create index services_owner_barber on public.services (owner_barber_id) where owner_barber_id is not null;
+
+-- ---------------------------------------------------------------------------
+-- Chairs
+-- ---------------------------------------------------------------------------
+create table public.chairs (
+  id uuid primary key default gen_random_uuid(),
+  shop_id uuid not null references public.shops (id) on delete cascade,
+  label text not null check (length(trim(label)) between 1 and 40),
+  position int not null default 0,
+  barber_id uuid references public.barbers (id) on delete set null,
+  is_active boolean not null default true,
+  notes text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+create unique index chairs_barber_unique on public.chairs (barber_id) where barber_id is not null;
+create unique index chairs_shop_label on public.chairs (shop_id, lower(label));
+create index chairs_shop on public.chairs (shop_id, position);
+create trigger chairs_touch before update on public.chairs for each row execute function app.touch_updated_at();
+
+create or replace function app.chairs_check_tenant()
+returns trigger language plpgsql as $$
+begin
+  if new.barber_id is not null and app.barber_shop(new.barber_id) is distinct from new.shop_id then
+    perform app.fail('BARBER_NOT_IN_SHOP');
+  end if;
+  return new;
+end $$;
+create trigger chairs_check_tenant before insert or update of barber_id, shop_id on public.chairs
+  for each row execute function app.chairs_check_tenant();
+
+-- ---------------------------------------------------------------------------
+-- Chair rent ledger (chair owners / hybrid barbers)
+-- ---------------------------------------------------------------------------
+create table public.rent_charges (
+  id uuid primary key default gen_random_uuid(),
+  shop_id uuid not null references public.shops (id) on delete cascade,
+  barber_id uuid not null references public.barbers (id) on delete cascade,
+  chair_id uuid references public.chairs (id) on delete set null,
+  period text not null check (period in ('week', 'month')),
+  period_start date not null,
+  period_end date not null,
+  due_date date not null,
+  amount_cents bigint not null check (amount_cents >= 0),
+  paid_cents bigint not null default 0 check (paid_cents >= 0),
+  waived boolean not null default false,
+  note text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique (barber_id, period_start, period),
+  check (period_end >= period_start)
+);
+create index rent_charges_shop on public.rent_charges (shop_id, period_start desc);
+create trigger rent_charges_touch before update on public.rent_charges for each row execute function app.touch_updated_at();
+
+create table public.rent_payments (
+  id uuid primary key default gen_random_uuid(),
+  shop_id uuid not null references public.shops (id) on delete cascade,
+  rent_charge_id uuid not null references public.rent_charges (id) on delete cascade,
+  barber_id uuid not null references public.barbers (id) on delete cascade,
+  amount_cents bigint not null check (amount_cents > 0),
+  method public.payment_method not null default 'cash',
+  note text,
+  recorded_by uuid references auth.users (id),
+  paid_at timestamptz not null default now()
+);
+create index rent_payments_shop on public.rent_payments (shop_id, paid_at);
+create index rent_payments_barber on public.rent_payments (barber_id, paid_at);
+
+-- ---------------------------------------------------------------------------
+-- Inventory
+-- ---------------------------------------------------------------------------
+create table public.products (
+  id uuid primary key default gen_random_uuid(),
+  shop_id uuid not null references public.shops (id) on delete cascade,
+  owner_barber_id uuid references public.barbers (id) on delete cascade, -- NULL = shop inventory
+  name text not null check (length(trim(name)) between 1 and 120),
+  brand text,
+  sku text,
+  category text,
+  -- retail: sold to clients · backbar: used during services (blades, wax, neck strips)
+  kind text not null default 'retail' check (kind in ('retail', 'backbar')),
+  unit text not null default 'unit',
+  cost_cents bigint not null default 0 check (cost_cents >= 0),
+  price_cents bigint not null default 0 check (price_cents >= 0),
+  stock_qty int not null default 0,
+  low_stock_at int not null default 2 check (low_stock_at >= 0),
+  supplier text,
+  photo_url text,
+  is_active boolean not null default true,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  deleted_at timestamptz
+);
+create index products_shop on public.products (shop_id) where deleted_at is null;
+create index products_owner on public.products (owner_barber_id) where owner_barber_id is not null;
+create unique index products_sku on public.products (shop_id, coalesce(owner_barber_id, '00000000-0000-0000-0000-000000000000'::uuid), lower(sku))
+  where sku is not null and deleted_at is null;
+create trigger products_touch before update on public.products for each row execute function app.touch_updated_at();
+
+create table public.inventory_movements (
+  id uuid primary key default gen_random_uuid(),
+  shop_id uuid not null references public.shops (id) on delete cascade,
+  product_id uuid not null references public.products (id) on delete cascade,
+  owner_barber_id uuid references public.barbers (id) on delete cascade, -- denormalised from the product (privacy)
+  barber_id uuid references public.barbers (id) on delete set null,      -- who sold / used it
+  kind text not null check (kind in ('purchase', 'sale', 'use', 'adjustment', 'waste', 'return', 'count')),
+  qty_delta int not null,
+  stock_after int not null,
+  unit_cost_cents bigint,
+  unit_price_cents bigint,
+  payment_id uuid references public.payments (id) on delete set null,
+  appointment_id uuid references public.appointments (id) on delete set null,
+  note text,
+  created_by uuid references auth.users (id),
+  created_at timestamptz not null default now()
+);
+create index inventory_movements_product on public.inventory_movements (product_id, created_at desc);
+create index inventory_movements_shop on public.inventory_movements (shop_id, created_at);
+
+alter table public.payment_items add column product_id uuid references public.products (id) on delete set null;
+
+-- Product sales in the earnings ledger. product_revenue_cents = net sale value,
+-- product_cents = the barber's share (100% of their own products, a
+-- commission on shop products).
+alter table public.barber_earnings
+  add column product_revenue_cents bigint not null default 0,
+  add column product_cents bigint not null default 0;
+alter table public.barber_earnings drop constraint barber_earnings_kind_check;
+alter table public.barber_earnings add constraint barber_earnings_kind_check
+  check (kind in ('service', 'tip', 'adjustment', 'rent', 'refund', 'product', 'product_own'));
+
+-- ---------------------------------------------------------------------------
+-- Expenses (shop or a chair owner's own business)
+-- ---------------------------------------------------------------------------
+create table public.expenses (
+  id uuid primary key default gen_random_uuid(),
+  shop_id uuid not null references public.shops (id) on delete cascade,
+  barber_id uuid references public.barbers (id) on delete cascade, -- NULL = shop expense
+  category text not null check (category in (
+    'rent', 'utilities', 'supplies', 'products', 'equipment', 'payroll', 'marketing', 'software', 'fees', 'taxes',
+    'maintenance', 'education', 'transport', 'other')),
+  amount_cents bigint not null check (amount_cents > 0),
+  spent_on date not null,
+  vendor text,
+  note text,
+  method public.payment_method not null default 'cash',
+  receipt_url text,
+  created_by uuid references auth.users (id),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  deleted_at timestamptz
+);
+create index expenses_shop on public.expenses (shop_id, spent_on) where deleted_at is null;
+create index expenses_barber on public.expenses (barber_id, spent_on) where barber_id is not null and deleted_at is null;
+create trigger expenses_touch before update on public.expenses for each row execute function app.touch_updated_at();
+
+create or replace function app.expenses_check_tenant()
+returns trigger language plpgsql as $$
+begin
+  if new.barber_id is not null and app.barber_shop(new.barber_id) is distinct from new.shop_id then
+    perform app.fail('BARBER_NOT_IN_SHOP');
+  end if;
+  return new;
+end $$;
+create trigger expenses_check_tenant before insert or update of barber_id, shop_id on public.expenses
+  for each row execute function app.expenses_check_tenant();
+
+-- ---------------------------------------------------------------------------
+-- Permissions: inventory + finance
+-- ---------------------------------------------------------------------------
+create or replace function app.role_grants(p_role public.staff_role)
+returns text[] language sql immutable as $$
+  select case p_role
+    when 'owner' then array['*']
+    when 'manager' then array[
+      'shop.view', 'shop.settings', 'staff.manage', 'services.manage', 'schedule.manage_all',
+      'calendar.all', 'clients.all', 'payments.view', 'payments.record', 'payments.refund',
+      'reports.shop', 'marketing.manage', 'walkins.manage', 'waitlist.manage', 'reviews.manage',
+      'notifications.view', 'inventory.manage']
+    when 'receptionist' then array[
+      'shop.view', 'calendar.all', 'clients.all', 'payments.view', 'payments.record',
+      'walkins.manage', 'waitlist.manage', 'inventory.sell']
+    when 'barber' then array[
+      'shop.view', 'calendar.own', 'clients.own', 'payments.record_own', 'walkins.serve', 'inventory.sell']
+  end
+$$;
+
+create or replace function app.is_chair_owner(p_barber uuid)
+returns boolean language sql stable security definer set search_path = public, pg_temp as $$
+  select exists (select 1 from public.barbers where id = p_barber and barber_type = 'chair_owner')
+$$;
+
+-- Product visibility: shop inventory → shop staff; a chair owner's inventory → that chair owner only.
+create or replace function app.can_see_product(p_shop uuid, p_owner uuid)
+returns boolean language sql stable security definer set search_path = public, pg_temp as $$
+  select case when p_owner is null then app.is_staff(p_shop) else app.is_my_barber(p_owner) end
+$$;
+
+create or replace function app.can_manage_product(p_shop uuid, p_owner uuid)
+returns boolean language sql stable security definer set search_path = public, pg_temp as $$
+  select case when p_owner is null then app.can(p_shop, 'inventory.manage') else app.is_my_barber(p_owner) end
+$$;
+
+-- Employees edit their own weekly hours only if the shop allows it.
+create or replace function app.can_edit_schedule(p_barber uuid)
+returns boolean language sql stable security definer set search_path = public, pg_temp as $$
+  select app.can(app.barber_shop(p_barber), 'schedule.manage_all')
+      or (app.is_my_barber(p_barber)
+          and (app.is_chair_owner(p_barber)
+               or coalesce((select employees_manage_schedule from public.shop_settings where shop_id = app.barber_shop(p_barber)), true)))
+$$;
+
+drop policy availability_write on public.availability;
+create policy availability_write on public.availability for all to authenticated
+  using (app.can_edit_schedule(barber_id)) with check (app.can_edit_schedule(barber_id));
+
+create or replace function public.set_weekly_schedule(p_barber_id uuid, p_rows jsonb)
+returns void language plpgsql security definer set search_path = public, pg_temp as $$
+begin
+  perform app.require_auth();
+  if not app.can_edit_schedule(p_barber_id) then
+    perform app.fail('FORBIDDEN', 'Your shop manages your schedule');
+  end if;
+  delete from public.availability where barber_id = p_barber_id;
+  insert into public.availability (barber_id, weekday, starts_at, ends_at, kind, label)
+  select p_barber_id, (r ->> 'weekday')::smallint, (r ->> 'starts_at')::time, (r ->> 'ends_at')::time,
+         coalesce(r ->> 'kind', 'work'), r ->> 'label'
+    from jsonb_array_elements(coalesce(p_rows, '[]'::jsonb)) r;
+end $$;
+
+-- Barbers may only pick shop services or their own private services.
+create or replace function public.set_barber_services(p_barber_id uuid, p_service_ids uuid[])
+returns void language plpgsql security definer set search_path = public, pg_temp as $$
+declare v_shop uuid := app.barber_shop(p_barber_id);
+begin
+  perform app.require_auth();
+  if not (app.is_my_barber(p_barber_id) or app.can(v_shop, 'staff.manage') or app.can(v_shop, 'services.manage')) then
+    perform app.fail('FORBIDDEN');
+  end if;
+  if exists (select 1 from unnest(p_service_ids) sid where not exists
+             (select 1 from public.services s where s.id = sid and s.shop_id = v_shop
+                 and (s.owner_barber_id is null or s.owner_barber_id = p_barber_id))) then
+    perform app.fail('SERVICE_NOT_IN_SHOP');
+  end if;
+  update public.barber_services set is_active = (service_id = any (p_service_ids)) where barber_id = p_barber_id;
+  insert into public.barber_services (barber_id, service_id)
+  select p_barber_id, sid from unnest(p_service_ids) sid
+  on conflict (barber_id, service_id) do update set is_active = true;
+end $$;
+
+-- A chair owner (or an employee when the shop allows it) sets their own price/duration.
+create or replace function public.set_my_service_price(
+  p_barber_id uuid, p_service_id uuid, p_price_cents bigint, p_duration_minutes int default null)
+returns void language plpgsql security definer set search_path = public, pg_temp as $$
+declare v_shop uuid := app.barber_shop(p_barber_id);
+begin
+  perform app.require_auth();
+  if not (app.can(v_shop, 'staff.manage') or app.can(v_shop, 'services.manage')
+          or (app.is_my_barber(p_barber_id)
+              and (app.is_chair_owner(p_barber_id)
+                   or (select barbers_can_set_prices from public.shop_settings where shop_id = v_shop)))) then
+    perform app.fail('FORBIDDEN', 'Your shop sets your prices');
+  end if;
+  if p_price_cents is not null and p_price_cents < 0 then perform app.fail('INVALID_AMOUNT'); end if;
+  if not exists (select 1 from public.services s where s.id = p_service_id and s.shop_id = v_shop
+                    and (s.owner_barber_id is null or s.owner_barber_id = p_barber_id)) then
+    perform app.fail('SERVICE_NOT_IN_SHOP');
+  end if;
+  insert into public.barber_services (barber_id, service_id, price_cents, duration_minutes, is_active)
+  values (p_barber_id, p_service_id, p_price_cents, p_duration_minutes, true)
+  on conflict (barber_id, service_id) do update
+    set price_cents = excluded.price_cents, duration_minutes = excluded.duration_minutes, is_active = true;
+end $$;
+
+-- A chair owner creates / edits a service that only they offer.
+create or replace function public.save_my_service(
+  p_barber_id uuid, p_service_id uuid, p_name text, p_price_cents bigint, p_duration_minutes int,
+  p_description text default null, p_is_public boolean default true, p_is_active boolean default true)
+returns uuid language plpgsql security definer set search_path = public, pg_temp as $$
+declare v_shop uuid := app.barber_shop(p_barber_id); v_id uuid := p_service_id;
+begin
+  perform app.require_auth();
+  if not ((app.is_my_barber(p_barber_id) and app.is_chair_owner(p_barber_id)) or app.can(v_shop, 'services.manage')) then
+    perform app.fail('FORBIDDEN', 'Only chair owners create their own services');
+  end if;
+  if v_id is null then
+    insert into public.services (shop_id, owner_barber_id, name, description, price_cents, duration_minutes, is_public, is_active)
+    values (v_shop, p_barber_id, trim(p_name), p_description, p_price_cents, p_duration_minutes,
+            coalesce(p_is_public, true), coalesce(p_is_active, true))
+    returning id into v_id;
+  else
+    update public.services
+       set name = trim(p_name), description = p_description, price_cents = p_price_cents, duration_minutes = p_duration_minutes,
+           is_public = coalesce(p_is_public, true), is_active = coalesce(p_is_active, true)
+     where id = v_id and owner_barber_id = p_barber_id;
+    if not found then perform app.fail('NOT_FOUND'); end if;
+  end if;
+  insert into public.barber_services (barber_id, service_id, is_active) values (p_barber_id, v_id, coalesce(p_is_active, true))
+  on conflict (barber_id, service_id) do update set is_active = excluded.is_active, price_cents = null, duration_minutes = null;
+  return v_id;
+end $$;
+
+-- ---------------------------------------------------------------------------
+-- Chairs & barber type RPCs
+-- ---------------------------------------------------------------------------
+-- Employee ⇄ chair owner. Chair owners get a booth-rental plan (keep 100%,
+-- pay rent); employees get a commission plan.
+create or replace function public.set_barber_type(
+  p_barber_id uuid, p_type public.barber_type,
+  p_rent_cents bigint default null, p_rent_period text default 'week', p_percent_bps int default null)
+returns void language plpgsql security definer set search_path = public, pg_temp as $$
+declare v_shop uuid := app.barber_shop(p_barber_id); v_current public.commissions;
+begin
+  perform app.require(v_shop, 'staff.manage');
+  perform app.require(v_shop, 'commissions.manage');
+  update public.barbers set barber_type = p_type where id = p_barber_id;
+  v_current := app.commission_rule(p_barber_id, now());
+  if p_type = 'chair_owner' then
+    if p_rent_cents is null or p_rent_cents < 0 then perform app.fail('RENT_REQUIRED'); end if;
+    perform public.set_commission(p_barber_id, 'booth_rental', null, null, null, p_rent_cents,
+                                  coalesce(p_rent_period, 'week'), 10000);
+  else
+    perform public.set_commission(p_barber_id, 'percentage',
+      coalesce(p_percent_bps, case when v_current.type in ('percentage', 'hybrid') then v_current.percent_bps end, 5000),
+      null, null, null, null, coalesce(v_current.tip_share_bps, 10000));
+  end if;
+end $$;
+
+create or replace function public.save_chair(
+  p_shop_id uuid, p_chair_id uuid, p_label text, p_barber_id uuid default null,
+  p_is_active boolean default true, p_notes text default null)
+returns uuid language plpgsql security definer set search_path = public, pg_temp as $$
+declare v_id uuid := p_chair_id;
+begin
+  perform app.require(p_shop_id, 'staff.manage');
+  -- A barber sits in one chair: moving them frees the old one.
+  if p_barber_id is not null then
+    update public.chairs set barber_id = null where barber_id = p_barber_id and id is distinct from v_id;
+  end if;
+  if v_id is null then
+    insert into public.chairs (shop_id, label, barber_id, is_active, notes, position)
+    values (p_shop_id, trim(p_label), p_barber_id, coalesce(p_is_active, true), p_notes,
+            coalesce((select max(position) + 1 from public.chairs where shop_id = p_shop_id), 1))
+    returning id into v_id;
+  else
+    update public.chairs set label = trim(p_label), barber_id = p_barber_id, is_active = coalesce(p_is_active, true), notes = p_notes
+     where id = v_id and shop_id = p_shop_id;
+    if not found then perform app.fail('NOT_FOUND'); end if;
+  end if;
+  return v_id;
+exception when unique_violation then
+  perform app.fail('CHAIR_LABEL_TAKEN');
+end $$;
+
+create or replace function public.delete_chair(p_chair_id uuid)
+returns void language plpgsql security definer set search_path = public, pg_temp as $$
+declare v_shop uuid;
+begin
+  select shop_id into v_shop from public.chairs where id = p_chair_id;
+  perform app.require(v_shop, 'staff.manage');
+  delete from public.chairs where id = p_chair_id;
+end $$;
+
+-- ---------------------------------------------------------------------------
+-- Rent: charges are generated from the barber's commission plan
+-- (booth_rental / hybrid with rent_cents) for each week / month.
+-- ---------------------------------------------------------------------------
+create or replace function app.sync_rent_charges(p_shop uuid)
+returns int language plpgsql security definer set search_path = public, pg_temp as $$
+declare
+  v_tz text; v_today date; v_due_days int; b record; d date; c public.commissions; v_n int := 0; v_start date;
+begin
+  select s.timezone, ss.rent_due_days into v_tz, v_due_days
+    from public.shops s join public.shop_settings ss on ss.shop_id = s.id where s.id = p_shop;
+  v_today := (now() at time zone v_tz)::date;
+  for b in
+    select br.id, br.created_at, (select ch.id from public.chairs ch where ch.barber_id = br.id) chair_id,
+           (select min(cm.effective_from) from public.commissions cm
+             where cm.barber_id = br.id and cm.type in ('booth_rental', 'hybrid') and coalesce(cm.rent_cents, 0) > 0) first_rent
+      from public.barbers br
+     where br.shop_id = p_shop and br.deleted_at is null and br.status <> 'archived'
+  loop
+    continue when b.first_rent is null;
+    v_start := greatest(b.first_rent, v_today - 366);
+    -- Candidate period starts: every Monday and every 1st of the month.
+    for d in
+      select x::date from generate_series(date_trunc('week', v_start)::date, v_today, interval '1 week') x
+      union
+      select x::date from generate_series(date_trunc('month', v_start)::date, v_today, interval '1 month') x
+    loop
+      c := app.commission_rule(b.id, app.local_ts(greatest(d, b.first_rent), '12:00', v_tz));
+      continue when c.id is null or c.type not in ('booth_rental', 'hybrid') or coalesce(c.rent_cents, 0) <= 0;
+      continue when (c.rent_period = 'week' and extract(isodow from d) <> 1)
+                 or (c.rent_period = 'month' and extract(day from d) <> 1);
+      insert into public.rent_charges (shop_id, barber_id, chair_id, period, period_start, period_end, due_date, amount_cents)
+      values (p_shop, b.id, b.chair_id, c.rent_period, d,
+              case when c.rent_period = 'week' then d + 6 else (d + interval '1 month')::date - 1 end,
+              d + v_due_days, c.rent_cents)
+      on conflict (barber_id, period_start, period) do nothing;
+      if found then v_n := v_n + 1; end if;
+    end loop;
+  end loop;
+  return v_n;
+end $$;
+
+create or replace function app.rent_status(r public.rent_charges, p_today date)
+returns text language sql immutable as $$
+  select case when r.waived then 'waived'
+              when r.paid_cents >= r.amount_cents then 'paid'
+              when r.due_date < p_today then 'overdue'
+              when r.paid_cents > 0 then 'partial'
+              else 'due' end
+$$;
+
+-- Rent ledger for the shop (finance.manage) or for one barber (that barber).
+create or replace function public.rent_ledger(p_shop_id uuid, p_barber_id uuid default null)
+returns table (id uuid, barber_id uuid, barber_name text, chair_label text, period text, period_start date, period_end date,
+               due_date date, amount_cents bigint, paid_cents bigint, balance_cents bigint, status text, waived boolean, note text)
+language plpgsql security definer set search_path = public, pg_temp as $$
+#variable_conflict use_column
+declare v_today date;
+begin
+  perform app.require_auth();
+  if not (app.can(p_shop_id, 'finance.manage') or (p_barber_id is not null and app.is_my_barber(p_barber_id)
+          and app.barber_shop(p_barber_id) = p_shop_id)) then
+    perform app.fail('FORBIDDEN');
+  end if;
+  perform app.sync_rent_charges(p_shop_id);
+  select (now() at time zone timezone)::date into v_today from public.shops where id = p_shop_id;
+  return query
+    select r.id, r.barber_id, b.display_name, ch.label, r.period, r.period_start, r.period_end, r.due_date,
+           r.amount_cents, r.paid_cents, case when r.waived then 0 else greatest(r.amount_cents - r.paid_cents, 0) end,
+           app.rent_status(r, v_today), r.waived, r.note
+      from public.rent_charges r
+      join public.barbers b on b.id = r.barber_id
+      left join public.chairs ch on ch.id = r.chair_id
+     where r.shop_id = p_shop_id and (p_barber_id is null or r.barber_id = p_barber_id)
+     order by r.period_start desc, b.display_name;
+end $$;
+
+-- The shop records rent it received (cash, transfer…). Overpayment is refused.
+create or replace function public.record_rent_payment(
+  p_charge_id uuid, p_amount_cents bigint, p_method public.payment_method default 'cash', p_note text default null)
+returns jsonb language plpgsql security definer set search_path = public, pg_temp as $$
+declare r public.rent_charges;
+begin
+  select * into r from public.rent_charges where id = p_charge_id for update;
+  if r.id is null then perform app.fail('NOT_FOUND'); end if;
+  perform app.require(r.shop_id, 'finance.manage');
+  if p_amount_cents is null or p_amount_cents <= 0 or r.paid_cents + p_amount_cents > r.amount_cents then
+    perform app.fail('INVALID_AMOUNT');
+  end if;
+  insert into public.rent_payments (shop_id, rent_charge_id, barber_id, amount_cents, method, note, recorded_by)
+  values (r.shop_id, r.id, r.barber_id, p_amount_cents, coalesce(p_method, 'cash'), p_note, auth.uid());
+  update public.rent_charges set paid_cents = paid_cents + p_amount_cents where id = r.id returning * into r;
+  return jsonb_build_object('paid_cents', r.paid_cents, 'balance_cents', r.amount_cents - r.paid_cents);
+end $$;
+
+create or replace function public.set_rent_charge(p_charge_id uuid, p_waived boolean default null,
+                                                  p_amount_cents bigint default null, p_note text default null)
+returns void language plpgsql security definer set search_path = public, pg_temp as $$
+declare r public.rent_charges;
+begin
+  select * into r from public.rent_charges where id = p_charge_id for update;
+  if r.id is null then perform app.fail('NOT_FOUND'); end if;
+  perform app.require(r.shop_id, 'finance.manage');
+  if p_amount_cents is not null and (p_amount_cents < r.paid_cents or p_amount_cents < 0) then perform app.fail('INVALID_AMOUNT'); end if;
+  update public.rent_charges
+     set waived = coalesce(p_waived, waived), amount_cents = coalesce(p_amount_cents, amount_cents), note = coalesce(p_note, note)
+   where id = r.id;
+end $$;
+
+-- ---------------------------------------------------------------------------
+-- Inventory RPCs
+-- ---------------------------------------------------------------------------
+create or replace function public.save_product(
+  p_shop_id uuid, p_product_id uuid, p_name text,
+  p_owner_barber_id uuid default null, p_kind text default 'retail', p_brand text default null, p_sku text default null,
+  p_category text default null, p_cost_cents bigint default 0, p_price_cents bigint default 0, p_low_stock_at int default 2,
+  p_supplier text default null, p_unit text default 'unit', p_is_active boolean default true, p_initial_qty int default 0)
+returns uuid language plpgsql security definer set search_path = public, pg_temp as $$
+declare v_id uuid := p_product_id; p public.products;
+begin
+  perform app.require_auth();
+  if p_owner_barber_id is not null and app.barber_shop(p_owner_barber_id) is distinct from p_shop_id then
+    perform app.fail('BARBER_NOT_IN_SHOP');
+  end if;
+  if v_id is null then
+    if not app.can_manage_product(p_shop_id, p_owner_barber_id) then perform app.fail('FORBIDDEN'); end if;
+    insert into public.products (shop_id, owner_barber_id, name, brand, sku, category, kind, unit, cost_cents, price_cents,
+                                 low_stock_at, supplier, is_active)
+    values (p_shop_id, p_owner_barber_id, trim(p_name), nullif(trim(p_brand), ''), nullif(trim(p_sku), ''), nullif(trim(p_category), ''),
+            coalesce(p_kind, 'retail'), coalesce(nullif(trim(p_unit), ''), 'unit'), coalesce(p_cost_cents, 0), coalesce(p_price_cents, 0),
+            coalesce(p_low_stock_at, 2), nullif(trim(p_supplier), ''), coalesce(p_is_active, true))
+    returning id into v_id;
+    if coalesce(p_initial_qty, 0) > 0 then
+      perform public.move_stock(v_id, 'purchase', p_initial_qty, p_cost_cents, 'Opening stock');
+    end if;
+  else
+    select * into p from public.products where id = v_id and deleted_at is null;
+    if p.id is null or p.shop_id <> p_shop_id then perform app.fail('NOT_FOUND'); end if;
+    if not app.can_manage_product(p.shop_id, p.owner_barber_id) then perform app.fail('FORBIDDEN'); end if;
+    update public.products
+       set name = trim(p_name), brand = nullif(trim(p_brand), ''), sku = nullif(trim(p_sku), ''), category = nullif(trim(p_category), ''),
+           kind = coalesce(p_kind, kind), unit = coalesce(nullif(trim(p_unit), ''), unit), cost_cents = coalesce(p_cost_cents, cost_cents),
+           price_cents = coalesce(p_price_cents, price_cents), low_stock_at = coalesce(p_low_stock_at, low_stock_at),
+           supplier = nullif(trim(p_supplier), ''), is_active = coalesce(p_is_active, is_active)
+     where id = v_id;
+  end if;
+  return v_id;
+exception when unique_violation then
+  perform app.fail('SKU_TAKEN');
+end $$;
+
+create or replace function public.archive_product(p_product_id uuid)
+returns void language plpgsql security definer set search_path = public, pg_temp as $$
+declare p public.products;
+begin
+  select * into p from public.products where id = p_product_id;
+  if p.id is null then perform app.fail('NOT_FOUND'); end if;
+  if not app.can_manage_product(p.shop_id, p.owner_barber_id) then perform app.fail('FORBIDDEN'); end if;
+  update public.products set deleted_at = now(), is_active = false where id = p.id;
+end $$;
+
+-- Move stock. purchase (+, updates unit cost) · use / waste (−) · return (+) ·
+-- adjustment (±) · count (sets the absolute quantity after a physical count).
+-- Any barber may log 'use' of shop back-bar products.
+create or replace function public.move_stock(
+  p_product_id uuid, p_kind text, p_qty int, p_unit_cost_cents bigint default null, p_note text default null,
+  p_appointment_id uuid default null)
+returns int language plpgsql security definer set search_path = public, pg_temp as $$
+declare p public.products; v_delta int; v_after int; v_me uuid;
+begin
+  perform app.require_auth();
+  select * into p from public.products where id = p_product_id and deleted_at is null for update;
+  if p.id is null then perform app.fail('NOT_FOUND'); end if;
+  if not (app.can_manage_product(p.shop_id, p.owner_barber_id)
+          or (p_kind = 'use' and p.owner_barber_id is null and app.is_staff(p.shop_id))) then
+    perform app.fail('FORBIDDEN');
+  end if;
+  if p_qty is null or (p_kind <> 'adjustment' and p_kind <> 'count' and p_qty <= 0) or (p_kind = 'count' and p_qty < 0) then
+    perform app.fail('INVALID_QUANTITY');
+  end if;
+  v_delta := case p_kind
+               when 'purchase' then p_qty when 'return' then p_qty
+               when 'use' then -p_qty when 'waste' then -p_qty
+               when 'adjustment' then p_qty
+               when 'count' then p_qty - p.stock_qty
+             end;
+  if v_delta is null then perform app.fail('INVALID_KIND'); end if;
+  if p.stock_qty + v_delta < 0 then perform app.fail('OUT_OF_STOCK', p.name || ': ' || p.stock_qty || ' left'); end if;
+  update public.products
+     set stock_qty = stock_qty + v_delta,
+         cost_cents = case when p_kind = 'purchase' and p_unit_cost_cents is not null then p_unit_cost_cents else cost_cents end
+   where id = p.id returning stock_qty into v_after;
+  select b.id into v_me from public.barbers b where b.user_id = auth.uid() and b.shop_id = p.shop_id and b.deleted_at is null limit 1;
+  insert into public.inventory_movements (shop_id, product_id, owner_barber_id, barber_id, kind, qty_delta, stock_after,
+                                          unit_cost_cents, appointment_id, note, created_by)
+  values (p.shop_id, p.id, p.owner_barber_id, v_me, p_kind, v_delta, v_after,
+          case when p_kind = 'purchase' then coalesce(p_unit_cost_cents, p.cost_cents) else p.cost_cents end,
+          p_appointment_id, p_note, auth.uid());
+  return v_after;
+end $$;
+
+-- Sell retail products (at the chair or the front desk).
+-- p_items: [{"product_id": "...", "quantity": 1, "price_cents": 1500}]  (price defaults to the list price)
+-- A barber's own products: 100% to the barber. Shop products: the seller gets
+-- the shop's product commission, the shop keeps the rest.
+create or replace function public.sell_products(
+  p_shop_id uuid, p_items jsonb, p_barber_id uuid default null, p_method public.payment_method default 'cash',
+  p_client_id uuid default null, p_appointment_id uuid default null, p_discount_cents bigint default 0)
+returns jsonb language plpgsql security definer set search_path = public, pg_temp as $$
+declare
+  ss public.shop_settings;
+  i record;
+  p public.products;
+  v_payment uuid;
+  v_subtotal bigint := 0;
+  v_discount bigint := greatest(coalesce(p_discount_cents, 0), 0);
+  v_tax bigint;
+  v_total bigint;
+  v_shop_rev bigint := 0;   -- shop products
+  v_own_rev bigint := 0;    -- seller's own products
+  v_ratio numeric;
+  v_after int;
+  v_comm bigint;
+begin
+  perform app.require_auth();
+  if not (app.can(p_shop_id, 'payments.record')
+          or (p_barber_id is not null and app.is_my_barber(p_barber_id) and app.can(p_shop_id, 'payments.record_own'))) then
+    perform app.fail('FORBIDDEN');
+  end if;
+  if p_barber_id is not null and app.barber_shop(p_barber_id) is distinct from p_shop_id then perform app.fail('BARBER_NOT_IN_SHOP'); end if;
+  if p_client_id is not null and not exists (select 1 from public.clients where id = p_client_id and shop_id = p_shop_id) then
+    perform app.fail('CLIENT_NOT_IN_SHOP');
+  end if;
+  if p_appointment_id is not null and not exists (select 1 from public.appointments where id = p_appointment_id and shop_id = p_shop_id) then
+    perform app.fail('NOT_FOUND');
+  end if;
+  if jsonb_typeof(p_items) <> 'array' or jsonb_array_length(p_items) = 0 then perform app.fail('ITEMS_REQUIRED'); end if;
+  select * into ss from public.shop_settings where shop_id = p_shop_id;
+
+  insert into public.payments (shop_id, appointment_id, client_id, barber_id, kind, subtotal_cents, discount_cents, tax_cents,
+                               tip_cents, total_cents, amount_paid_cents, method, status, provider, recorded_by)
+  values (p_shop_id, p_appointment_id,
+          coalesce(p_client_id, (select client_id from public.appointments where id = p_appointment_id)),
+          p_barber_id, 'product', 0, 0, 0, 0, 0, 0, coalesce(p_method, 'cash'), 'PAID', 'manual', auth.uid())
+  returning id into v_payment;
+
+  for i in
+    select (x ->> 'product_id')::uuid product_id, greatest(coalesce((x ->> 'quantity')::int, 1), 1) qty,
+           (x ->> 'price_cents')::bigint price
+      from jsonb_array_elements(p_items) x
+  loop
+    select * into p from public.products where id = i.product_id and shop_id = p_shop_id and deleted_at is null and is_active for update;
+    if p.id is null then perform app.fail('PRODUCT_NOT_FOUND'); end if;
+    if p.owner_barber_id is not null and p.owner_barber_id is distinct from p_barber_id then
+      perform app.fail('PRODUCT_NOT_YOURS', p.name);
+    end if;
+    if coalesce(i.price, p.price_cents) < 0 then perform app.fail('INVALID_AMOUNT'); end if;
+    if p.stock_qty < i.qty then perform app.fail('OUT_OF_STOCK', p.name || ': ' || p.stock_qty || ' left'); end if;
+    update public.products set stock_qty = stock_qty - i.qty where id = p.id returning stock_qty into v_after;
+    insert into public.inventory_movements (shop_id, product_id, owner_barber_id, barber_id, kind, qty_delta, stock_after,
+                                            unit_cost_cents, unit_price_cents, payment_id, appointment_id, created_by)
+    values (p_shop_id, p.id, p.owner_barber_id, p_barber_id, 'sale', -i.qty, v_after, p.cost_cents,
+            coalesce(i.price, p.price_cents), v_payment, p_appointment_id, auth.uid());
+    insert into public.payment_items (payment_id, product_id, description, quantity, unit_price_cents, total_cents)
+    values (v_payment, p.id, p.name, i.qty, coalesce(i.price, p.price_cents), coalesce(i.price, p.price_cents) * i.qty);
+    v_subtotal := v_subtotal + coalesce(i.price, p.price_cents) * i.qty;
+    if p.owner_barber_id is null then v_shop_rev := v_shop_rev + coalesce(i.price, p.price_cents) * i.qty;
+    else v_own_rev := v_own_rev + coalesce(i.price, p.price_cents) * i.qty; end if;
+  end loop;
+
+  v_discount := least(v_discount, v_subtotal);
+  v_tax := case when ss.prices_include_tax then 0 else round((v_subtotal - v_discount) * ss.tax_rate_bps / 10000.0)::bigint end;
+  v_total := v_subtotal - v_discount + v_tax;
+  update public.payments
+     set subtotal_cents = v_subtotal, discount_cents = v_discount, tax_cents = v_tax, total_cents = v_total, amount_paid_cents = v_total
+   where id = v_payment;
+
+  -- Discount is shared pro-rata between shop and own products.
+  v_ratio := case when v_subtotal > 0 then (v_subtotal - v_discount)::numeric / v_subtotal else 0 end;
+  if p_barber_id is not null and v_own_rev > 0 then
+    insert into public.barber_earnings (shop_id, barber_id, payment_id, appointment_id, kind, product_revenue_cents, product_cents, shop_cents)
+    values (p_shop_id, p_barber_id, v_payment, p_appointment_id, 'product_own',
+            round(v_own_rev * v_ratio)::bigint, round(v_own_rev * v_ratio)::bigint, 0);
+  end if;
+  if v_shop_rev > 0 and p_barber_id is not null then
+    v_comm := round(round(v_shop_rev * v_ratio) * ss.product_commission_bps / 10000.0)::bigint;
+    insert into public.barber_earnings (shop_id, barber_id, payment_id, appointment_id, kind, product_revenue_cents, product_cents, shop_cents)
+    values (p_shop_id, p_barber_id, v_payment, p_appointment_id, 'product',
+            round(v_shop_rev * v_ratio)::bigint, v_comm, round(v_shop_rev * v_ratio)::bigint - v_comm);
+  end if;
+  return jsonb_build_object('payment_id', v_payment, 'subtotal_cents', v_subtotal, 'discount_cents', v_discount,
+                            'tax_cents', v_tax, 'total_cents', v_total);
+end $$;
+
+-- Refunds reverse product earnings too; voids put sold products back on the shelf.
+create or replace function public.refund_payment(p_payment_id uuid, p_amount_cents bigint, p_reason text default null)
+returns void language plpgsql security definer set search_path = public, pg_temp as $$
+declare p public.payments; v_ratio numeric; e record;
+begin
+  select * into p from public.payments where id = p_payment_id for update;
+  if p.id is null then perform app.fail('NOT_FOUND'); end if;
+  perform app.require(p.shop_id, 'payments.refund');
+  if p.status in ('VOID', 'REFUNDED') then perform app.fail('INVALID_STATUS'); end if;
+  if p_amount_cents <= 0 or p.refunded_cents + p_amount_cents > p.amount_paid_cents then perform app.fail('INVALID_AMOUNT'); end if;
+
+  insert into public.refunds (payment_id, amount_cents, reason, refunded_by) values (p.id, p_amount_cents, p_reason, auth.uid());
+  update public.payments
+     set refunded_cents = refunded_cents + p_amount_cents,
+         status = case when refunded_cents + p_amount_cents >= amount_paid_cents then 'REFUNDED' else status end
+   where id = p.id;
+  update public.appointments set payment_status = 'REFUNDED'
+   where id = p.appointment_id and p.kind = 'service' and p.refunded_cents + p_amount_cents >= p.amount_paid_cents;
+
+  v_ratio := p_amount_cents::numeric / nullif(p.total_cents, 0);
+  select coalesce(sum(service_revenue_cents), 0) sr, coalesce(sum(commission_cents), 0) cc,
+         coalesce(sum(tip_cents), 0) tc, coalesce(sum(shop_cents), 0) sc,
+         coalesce(sum(product_revenue_cents), 0) pr, coalesce(sum(product_cents), 0) pc
+    into e from public.barber_earnings where payment_id = p.id and kind <> 'refund';
+  if p.barber_id is not null then
+    insert into public.barber_earnings (shop_id, barber_id, payment_id, appointment_id, kind, service_revenue_cents,
+                                        commission_cents, tip_cents, shop_cents, product_revenue_cents, product_cents)
+    values (p.shop_id, p.barber_id, p.id, p.appointment_id, 'refund',
+            -round(e.sr * v_ratio)::bigint, -round(e.cc * v_ratio)::bigint, -round(e.tc * v_ratio)::bigint, -round(e.sc * v_ratio)::bigint,
+            -round(e.pr * v_ratio)::bigint, -round(e.pc * v_ratio)::bigint);
+  end if;
+end $$;
+
+create or replace function public.void_payment(p_payment_id uuid, p_reason text default null)
+returns void language plpgsql security definer set search_path = public, pg_temp as $$
+declare p public.payments; m record; v_after int;
+begin
+  select * into p from public.payments where id = p_payment_id for update;
+  if p.id is null then perform app.fail('NOT_FOUND'); end if;
+  -- A barber can void their own product sale on the same day (wrong item rung up).
+  if not (app.can(p.shop_id, 'payments.refund')
+          or (p.kind = 'product' and app.is_my_barber(p.barber_id) and p.paid_at > now() - interval '12 hours')) then
+    perform app.fail('FORBIDDEN');
+  end if;
+  if p.status = 'VOID' then return; end if;
+  if p.refunded_cents > 0 then perform app.fail('ALREADY_REFUNDED'); end if;
+  update public.payments set status = 'VOID', voided_at = now(), notes = concat_ws(' · ', notes, 'Voided: ' || p_reason) where id = p.id;
+  delete from public.barber_earnings where payment_id = p.id;
+  delete from public.tips where payment_id = p.id;
+  delete from public.loyalty_ledger where payment_id = p.id;
+  if p.kind = 'service' then
+    update public.appointments set payment_status = 'UNPAID' where id = p.appointment_id;
+  end if;
+  for m in select * from public.inventory_movements where payment_id = p.id and kind = 'sale' loop
+    update public.products set stock_qty = stock_qty - m.qty_delta where id = m.product_id returning stock_qty into v_after;
+    insert into public.inventory_movements (shop_id, product_id, owner_barber_id, barber_id, kind, qty_delta, stock_after,
+                                            unit_cost_cents, payment_id, note, created_by)
+    values (m.shop_id, m.product_id, m.owner_barber_id, m.barber_id, 'return', -m.qty_delta, v_after, m.unit_cost_cents,
+            p.id, 'Sale voided', auth.uid());
+  end loop;
+end $$;
+
+-- ---------------------------------------------------------------------------
+-- Finance: money in / money out for the shop, or for one barber's business.
+-- Cash basis: inventory purchases count when bought; rent when paid.
+-- ---------------------------------------------------------------------------
+create or replace function public.finance_summary(p_shop_id uuid, p_from date, p_to date, p_barber_id uuid default null)
+returns jsonb language plpgsql security definer set search_path = public, pg_temp as $$
+declare
+  v_tz text; v_from timestamptz; v_to timestamptz; v_today date;
+  v_private boolean;      -- may see this barber's private expenses & inventory
+  v_in jsonb; v_out jsonb; v_series jsonb; v_extra jsonb;
+  v_in_total bigint; v_out_total bigint;
+begin
+  perform app.require_auth();
+  if p_to < p_from or p_to - p_from > 400 then perform app.fail('INVALID_RANGE'); end if;
+  select timezone into v_tz from public.shops where id = p_shop_id;
+  v_from := app.local_ts(p_from, '00:00', v_tz);
+  v_to := app.local_ts(p_to + 1, '00:00', v_tz);
+  v_today := (now() at time zone v_tz)::date;
+  perform app.sync_rent_charges(p_shop_id);
+
+  if p_barber_id is null then
+    -- =============================== SHOP ===============================
+    perform app.require(p_shop_id, 'finance.manage');
+    with e as (
+      select * from public.barber_earnings
+       where shop_id = p_shop_id and earned_at >= v_from and earned_at < v_to
+    )
+    select jsonb_build_object(
+      'services_cents', coalesce((select sum(service_revenue_cents) from e where coalesce(commission_snapshot ->> 'type', '') <> 'booth_rental'
+                                                                        and kind in ('service', 'refund')), 0)
+                        -- refunds of chair-owner tickets are not the shop's money either
+                        - coalesce((select sum(e2.service_revenue_cents) from e e2
+                                     where e2.kind = 'refund' and exists (select 1 from public.barber_earnings o
+                                       where o.payment_id = e2.payment_id and o.kind = 'service'
+                                         and o.commission_snapshot ->> 'type' = 'booth_rental')), 0),
+      'products_cents', coalesce((select sum(product_revenue_cents) from e where kind = 'product'), 0)
+                        + coalesce((select sum(e3.product_revenue_cents) from e e3 where e3.kind = 'refund'
+                                     and exists (select 1 from public.barber_earnings o where o.payment_id = e3.payment_id and o.kind = 'product')
+                                     and not exists (select 1 from public.barber_earnings o where o.payment_id = e3.payment_id and o.kind = 'product_own')), 0)
+                        + coalesce((select sum(p.subtotal_cents - p.discount_cents) from public.payments p
+                                     where p.shop_id = p_shop_id and p.kind = 'product' and p.barber_id is null and p.status <> 'VOID'
+                                       and p.paid_at >= v_from and p.paid_at < v_to), 0),
+      'rent_cents', coalesce((select sum(amount_cents) from public.rent_payments where shop_id = p_shop_id and paid_at >= v_from and paid_at < v_to), 0),
+      'fees_cents', coalesce((select sum(subtotal_cents) from public.payments where shop_id = p_shop_id and kind in ('no_show_fee', 'late_cancel_fee')
+                                and status <> 'VOID' and paid_at >= v_from and paid_at < v_to), 0),
+      'tips_kept_cents', coalesce((select sum(shop_cents) from e where kind = 'tip'), 0)
+    ) into v_in;
+
+    with e as (
+      select * from public.barber_earnings
+       where shop_id = p_shop_id and earned_at >= v_from and earned_at < v_to
+    )
+    select jsonb_build_object(
+      'commissions_cents', coalesce((select sum(commission_cents) from e where coalesce(commission_snapshot ->> 'type', '') <> 'booth_rental'
+                                                                        and kind in ('service', 'refund')), 0)
+                           - coalesce((select sum(e2.commission_cents) from e e2
+                                        where e2.kind = 'refund' and exists (select 1 from public.barber_earnings o
+                                          where o.payment_id = e2.payment_id and o.kind = 'service'
+                                            and o.commission_snapshot ->> 'type' = 'booth_rental')), 0),
+      'product_commissions_cents', coalesce((select sum(product_cents) from e where kind = 'product'), 0),
+      'inventory_cents', coalesce((select sum(m.qty_delta * coalesce(m.unit_cost_cents, 0)) from public.inventory_movements m
+                                    where m.shop_id = p_shop_id and m.owner_barber_id is null and m.kind = 'purchase'
+                                      and m.created_at >= v_from and m.created_at < v_to), 0),
+      'expenses_cents', coalesce((select sum(amount_cents) from public.expenses where shop_id = p_shop_id and barber_id is null
+                                     and deleted_at is null and spent_on between p_from and p_to), 0)
+    ) into v_out;
+
+    v_extra := jsonb_build_object(
+      'pass_through', jsonb_build_object(
+        'chair_owner_services_cents', coalesce((select sum(service_revenue_cents) from public.barber_earnings
+                                                 where shop_id = p_shop_id and earned_at >= v_from and earned_at < v_to
+                                                   and kind = 'service' and commission_snapshot ->> 'type' = 'booth_rental'), 0),
+        'tips_to_barbers_cents', coalesce((select sum(tip_cents) from public.barber_earnings
+                                            where shop_id = p_shop_id and earned_at >= v_from and earned_at < v_to), 0)),
+      'collected_by_method', (select coalesce(jsonb_object_agg(method, cents), '{}') from (
+                                select method, sum(amount_paid_cents - refunded_cents) cents from public.payments
+                                 where shop_id = p_shop_id and status <> 'VOID' and paid_at >= v_from and paid_at < v_to
+                                 group by method) x),
+      'rent', jsonb_build_object(
+        'outstanding_cents', coalesce((select sum(greatest(amount_cents - paid_cents, 0)) from public.rent_charges
+                                        where shop_id = p_shop_id and not waived and period_start <= v_today), 0),
+        'overdue_count', (select count(*) from public.rent_charges r where r.shop_id = p_shop_id and app.rent_status(r, v_today) = 'overdue')),
+      'inventory', jsonb_build_object(
+        'value_cents', coalesce((select sum(greatest(stock_qty, 0) * cost_cents) from public.products
+                                  where shop_id = p_shop_id and owner_barber_id is null and deleted_at is null), 0),
+        'retail_value_cents', coalesce((select sum(greatest(stock_qty, 0) * price_cents) from public.products
+                                         where shop_id = p_shop_id and owner_barber_id is null and deleted_at is null and kind = 'retail'), 0),
+        'low_stock', (select count(*) from public.products where shop_id = p_shop_id and owner_barber_id is null
+                        and deleted_at is null and is_active and stock_qty <= low_stock_at),
+        'cogs_cents', coalesce((select sum(-m.qty_delta * coalesce(m.unit_cost_cents, 0)) from public.inventory_movements m
+                                 where m.shop_id = p_shop_id and m.owner_barber_id is null and m.kind in ('sale', 'return')
+                                   and m.payment_id is not null and m.created_at >= v_from and m.created_at < v_to), 0)),
+      'expenses_by_category', (select coalesce(jsonb_agg(jsonb_build_object('category', category, 'cents', cents) order by cents desc), '[]') from (
+                                 select category, sum(amount_cents) cents from public.expenses
+                                  where shop_id = p_shop_id and barber_id is null and deleted_at is null and spent_on between p_from and p_to
+                                  group by category) x),
+      -- What each barber earned (payroll) and owes (rent) in the period.
+      'barbers', (select coalesce(jsonb_agg(row_to_json(x) order by x.name), '[]') from (
+                    select b.id barber_id, b.display_name name, b.barber_type,
+                           coalesce(sum(e.service_revenue_cents) filter (where e.kind in ('service', 'refund')), 0) services_cents,
+                           coalesce(sum(e.commission_cents), 0) commission_cents,
+                           coalesce(sum(e.tip_cents), 0) tips_cents,
+                           coalesce(sum(e.product_cents) filter (where e.kind = 'product'), 0) product_commission_cents,
+                           case when b.barber_type = 'employee'
+                                then coalesce(sum(e.commission_cents), 0) + coalesce(sum(e.tip_cents), 0)
+                                     + coalesce(sum(e.product_cents) filter (where e.kind = 'product'), 0) end payout_cents,
+                           (select coalesce(sum(rp.amount_cents), 0) from public.rent_payments rp
+                             where rp.barber_id = b.id and rp.paid_at >= v_from and rp.paid_at < v_to) rent_paid_cents,
+                           (select coalesce(sum(greatest(r.amount_cents - r.paid_cents, 0)), 0) from public.rent_charges r
+                             where r.barber_id = b.id and not r.waived and r.period_start <= v_today) rent_balance_cents
+                      from public.barbers b
+                      left join public.barber_earnings e on e.barber_id = b.id and e.earned_at >= v_from and e.earned_at < v_to
+                     where b.shop_id = p_shop_id and b.deleted_at is null
+                     group by b.id) x)
+    );
+
+    select coalesce(jsonb_agg(jsonb_build_object('date', d, 'in_cents', i, 'out_cents', o) order by d), '[]') into v_series from (
+      select g::date d,
+             coalesce((select sum(e.service_revenue_cents - e.commission_cents + e.product_revenue_cents - e.product_cents)
+                         from public.barber_earnings e
+                        where e.shop_id = p_shop_id and e.kind in ('service', 'refund', 'product')
+                          and coalesce(e.commission_snapshot ->> 'type', '') <> 'booth_rental'
+                          and (e.earned_at at time zone v_tz)::date = g::date), 0)
+             + coalesce((select sum(amount_cents) from public.rent_payments rp where rp.shop_id = p_shop_id
+                          and (rp.paid_at at time zone v_tz)::date = g::date), 0) i,
+             coalesce((select sum(amount_cents) from public.expenses x where x.shop_id = p_shop_id and x.barber_id is null
+                          and x.deleted_at is null and x.spent_on = g::date), 0)
+             + coalesce((select sum(m.qty_delta * coalesce(m.unit_cost_cents, 0)) from public.inventory_movements m
+                          where m.shop_id = p_shop_id and m.owner_barber_id is null and m.kind = 'purchase'
+                            and (m.created_at at time zone v_tz)::date = g::date), 0) o
+        from generate_series(p_from, p_to, interval '1 day') g) s;
+  else
+    -- ============================ ONE BARBER ============================
+    if app.barber_shop(p_barber_id) is distinct from p_shop_id then perform app.fail('BARBER_NOT_IN_SHOP'); end if;
+    if not app.can_view_barber_money(p_shop_id, p_barber_id) then perform app.fail('FORBIDDEN'); end if;
+    v_private := app.is_my_barber(p_barber_id);
+
+    with e as (
+      select * from public.barber_earnings
+       where barber_id = p_barber_id and earned_at >= v_from and earned_at < v_to
+    )
+    select jsonb_build_object(
+      'services_cents', coalesce((select sum(commission_cents) from e where kind in ('service', 'refund', 'adjustment')), 0),
+      'tips_cents', coalesce((select sum(tip_cents) from e), 0),
+      'products_cents', coalesce((select sum(product_cents) from e where kind = 'product_own'), 0)
+                        + coalesce((select sum(e2.product_cents) from e e2 where e2.kind = 'refund'
+                                     and exists (select 1 from public.barber_earnings o where o.payment_id = e2.payment_id and o.kind = 'product_own')), 0),
+      'product_commissions_cents', coalesce((select sum(product_cents) from e where kind = 'product'), 0)
+                        + coalesce((select sum(e3.product_cents) from e e3 where e3.kind = 'refund'
+                                     and exists (select 1 from public.barber_earnings o where o.payment_id = e3.payment_id and o.kind = 'product')
+                                     and not exists (select 1 from public.barber_earnings o where o.payment_id = e3.payment_id and o.kind = 'product_own')), 0),
+      'gross_services_cents', coalesce((select sum(service_revenue_cents) from e where kind in ('service', 'refund')), 0)
+    ) into v_in;
+
+    select jsonb_build_object(
+      'rent_cents', coalesce((select sum(amount_cents) from public.rent_payments where barber_id = p_barber_id
+                                 and paid_at >= v_from and paid_at < v_to), 0),
+      'inventory_cents', case when v_private then coalesce((select sum(m.qty_delta * coalesce(m.unit_cost_cents, 0))
+                                 from public.inventory_movements m where m.owner_barber_id = p_barber_id and m.kind = 'purchase'
+                                  and m.created_at >= v_from and m.created_at < v_to), 0) else 0 end,
+      'expenses_cents', case when v_private then coalesce((select sum(amount_cents) from public.expenses where barber_id = p_barber_id
+                                 and deleted_at is null and spent_on between p_from and p_to), 0) else 0 end
+    ) into v_out;
+
+    v_extra := jsonb_build_object(
+      'barber_type', (select barber_type from public.barbers where id = p_barber_id),
+      'private', v_private,
+      'cuts', (select count(*) from public.appointments where barber_id = p_barber_id and status = 'COMPLETED' and kind = 'appointment'
+                  and coalesce(completed_at, ends_at) >= v_from and coalesce(completed_at, ends_at) < v_to),
+      'rent', jsonb_build_object(
+        'charged_cents', coalesce((select sum(amount_cents) from public.rent_charges where barber_id = p_barber_id and not waived
+                                     and period_start between p_from and p_to), 0),
+        'outstanding_cents', coalesce((select sum(greatest(amount_cents - paid_cents, 0)) from public.rent_charges
+                                        where barber_id = p_barber_id and not waived and period_start <= v_today), 0),
+        'next_due', (select jsonb_build_object('due_date', r.due_date, 'balance_cents', r.amount_cents - r.paid_cents, 'period_start', r.period_start)
+                       from public.rent_charges r where r.barber_id = p_barber_id and not r.waived and r.paid_cents < r.amount_cents
+                       order by r.due_date limit 1),
+        'plan', (select jsonb_build_object('type', c.type, 'rent_cents', c.rent_cents, 'rent_period', c.rent_period, 'percent_bps', c.percent_bps)
+                   from app.commission_rule(p_barber_id, now()) c where c.id is not null)),
+      'inventory', case when v_private then jsonb_build_object(
+        'value_cents', coalesce((select sum(greatest(stock_qty, 0) * cost_cents) from public.products
+                                  where owner_barber_id = p_barber_id and deleted_at is null), 0),
+        'low_stock', (select count(*) from public.products where owner_barber_id = p_barber_id and deleted_at is null
+                        and is_active and stock_qty <= low_stock_at),
+        'cogs_cents', coalesce((select sum(-m.qty_delta * coalesce(m.unit_cost_cents, 0)) from public.inventory_movements m
+                                 where m.owner_barber_id = p_barber_id and m.kind in ('sale', 'return') and m.payment_id is not null
+                                   and m.created_at >= v_from and m.created_at < v_to), 0)) end,
+      'expenses_by_category', case when v_private then (select coalesce(jsonb_agg(jsonb_build_object('category', category, 'cents', cents) order by cents desc), '[]') from (
+                                 select category, sum(amount_cents) cents from public.expenses
+                                  where barber_id = p_barber_id and deleted_at is null and spent_on between p_from and p_to
+                                  group by category) x) else '[]'::jsonb end
+    );
+
+    select coalesce(jsonb_agg(jsonb_build_object('date', d, 'in_cents', i, 'out_cents', o) order by d), '[]') into v_series from (
+      select g::date d,
+             coalesce((select sum(e.commission_cents + e.tip_cents + e.product_cents) from public.barber_earnings e
+                        where e.barber_id = p_barber_id and (e.earned_at at time zone v_tz)::date = g::date), 0) i,
+             coalesce((select sum(amount_cents) from public.rent_payments rp where rp.barber_id = p_barber_id
+                          and (rp.paid_at at time zone v_tz)::date = g::date), 0)
+             + case when v_private then
+                 coalesce((select sum(amount_cents) from public.expenses x where x.barber_id = p_barber_id
+                              and x.deleted_at is null and x.spent_on = g::date), 0)
+                 + coalesce((select sum(m.qty_delta * coalesce(m.unit_cost_cents, 0)) from public.inventory_movements m
+                              where m.owner_barber_id = p_barber_id and m.kind = 'purchase'
+                                and (m.created_at at time zone v_tz)::date = g::date), 0)
+               else 0 end o
+        from generate_series(p_from, p_to, interval '1 day') g) s;
+  end if;
+
+  select coalesce(sum(value::bigint), 0) into v_in_total from jsonb_each_text(v_in) where key <> 'gross_services_cents';
+  select coalesce(sum(value::bigint), 0) into v_out_total from jsonb_each_text(v_out);
+  return jsonb_build_object(
+    'period', jsonb_build_object('from', p_from, 'to', p_to, 'timezone', v_tz,
+                                 'currency', (select currency from public.shop_settings where shop_id = p_shop_id)),
+    'scope', case when p_barber_id is null then 'shop' else 'barber' end,
+    'money_in', v_in, 'money_out', v_out,
+    'total_in_cents', v_in_total, 'total_out_cents', v_out_total, 'net_cents', v_in_total - v_out_total,
+    'series', v_series) || v_extra;
+end $$;
+
+-- ---------------------------------------------------------------------------
+-- Workspaces: expose barber type + the new permissions to the app shell.
+-- ---------------------------------------------------------------------------
+drop function public.my_workspaces();
+create function public.my_workspaces()
+returns table (shop_id uuid, shop_name text, shop_slug text, organization_id uuid, role public.staff_role,
+               barber_id uuid, barber_type public.barber_type, timezone text, accent_color text, is_published boolean, permissions text[])
+language sql stable security definer set search_path = public, pg_temp as $$
+  with ms as (
+    select s.id as shop_id, s.name, s.slug, s.organization_id, m.role, s.timezone, s.accent_color, s.is_published,
+           row_number() over (partition by s.id order by array_position(array['owner','manager','receptionist','barber']::public.staff_role[], m.role)) rn
+      from public.memberships m
+      join public.shops s on s.organization_id = m.organization_id and (m.shop_id is null or m.shop_id = s.id)
+     where m.user_id = auth.uid() and m.is_active and s.deleted_at is null
+  )
+  select ms.shop_id, ms.name, ms.slug, ms.organization_id, ms.role, b.id, b.barber_type,
+         ms.timezone, ms.accent_color, ms.is_published,
+         array(select p from unnest(array[
+           'shop.settings','staff.manage','services.manage','schedule.manage_all','calendar.all','clients.all',
+           'payments.view','payments.record','payments.refund','reports.shop','marketing.manage','walkins.manage',
+           'waitlist.manage','reviews.manage','commissions.manage','financials.all_barbers','audit.view',
+           'billing','notifications.view','*private_notes','inventory.manage','inventory.sell','finance.manage']) p
+                where app.can(ms.shop_id, p))
+    from ms
+    left join lateral (select b.id, b.barber_type from public.barbers b
+                        where b.shop_id = ms.shop_id and b.user_id = auth.uid() and b.deleted_at is null limit 1) b on true
+   where rn = 1
+   order by ms.name
+$$;
+
+-- ---------------------------------------------------------------------------
+-- Row Level Security for the new tables
+-- ---------------------------------------------------------------------------
+do $$
+declare t text;
+begin
+  foreach t in array array['chairs', 'rent_charges', 'rent_payments', 'products', 'inventory_movements', 'expenses'] loop
+    execute format('alter table public.%I enable row level security', t);
+    execute format('revoke all on public.%I from anon', t);
+  end loop;
+end $$;
+
+create policy chairs_read on public.chairs for select to authenticated using (app.is_staff(shop_id));
+-- chairs are written through save_chair / delete_chair
+
+create policy rent_charges_read on public.rent_charges for select to authenticated
+  using (app.can(shop_id, 'finance.manage') or app.is_my_barber(barber_id));
+create policy rent_payments_read on public.rent_payments for select to authenticated
+  using (app.can(shop_id, 'finance.manage') or app.is_my_barber(barber_id));
+
+create policy products_read on public.products for select to authenticated
+  using (app.can_see_product(shop_id, owner_barber_id));
+create policy inventory_movements_read on public.inventory_movements for select to authenticated
+  using (app.can_see_product(shop_id, owner_barber_id));
+
+create policy expenses_read on public.expenses for select to authenticated
+  using (deleted_at is null and case when barber_id is null then app.can(shop_id, 'finance.manage') else app.is_my_barber(barber_id) end);
+create policy expenses_insert on public.expenses for insert to authenticated
+  with check (created_by = auth.uid()
+              and case when barber_id is null then app.can(shop_id, 'finance.manage') else app.is_my_barber(barber_id) end);
+create policy expenses_update on public.expenses for update to authenticated
+  using (case when barber_id is null then app.can(shop_id, 'finance.manage') else app.is_my_barber(barber_id) end)
+  with check (case when barber_id is null then app.can(shop_id, 'finance.manage') else app.is_my_barber(barber_id) end);
+
+-- Audit trail for the money-adjacent tables.
+do $$
+declare t text;
+begin
+  foreach t in array array['chairs', 'rent_charges', 'rent_payments', 'products', 'expenses'] loop
+    execute format('create trigger %I after insert or update or delete on public.%I
+                    for each row execute function app.audit()', t || '_audit', t);
+  end loop;
+end $$;
+
+grant execute on all functions in schema app to authenticated, anon, service_role;
+
+-- ===================== 20261007000017_live_queue_smart_time.sql =====================
+-- =============================================================================
+-- BarberNGo — live barber status, chair board, public walk-in queue,
+-- smart (learned) service times, live appointment page, WhatsApp/SMS
+-- notifications and operations metrics (wait time, on-time %).
+-- =============================================================================
+
+-- ---------------------------------------------------------------------------
+-- Finishing early frees the chair: a completed appointment occupies the
+-- calendar only until the cut actually ended (+ buffer), so the next client
+-- can be booked or seated straight away.
+-- ---------------------------------------------------------------------------
+alter table public.appointments add column released_at timestamptz, add column occupied_until timestamptz;
+
+create or replace function app.appointments_before_write()
+returns trigger language plpgsql as $$
+begin
+  new.blocked_until := new.ends_at + make_interval(mins => new.buffer_minutes);
+  if new.status = 'COMPLETED' and new.released_at is null and (tg_op = 'INSERT' or old.status is distinct from 'COMPLETED') then
+    -- Rounded down: the next client may take the chair in the minute the cut ended.
+    new.released_at := date_trunc('minute', coalesce(new.actual_finished_at, now())) + make_interval(mins => new.buffer_minutes);
+  end if;
+  new.occupied_until := case when new.released_at is null then new.blocked_until
+                             else greatest(least(new.blocked_until, new.released_at), new.starts_at) end; -- empty range when done before its slot
+  if tg_op = 'UPDATE' then
+    new.updated_at := now();
+  end if;
+  return new;
+end $$;
+
+update public.appointments set occupied_until = blocked_until;
+alter table public.appointments alter column occupied_until set not null;
+alter table public.appointments drop constraint appointments_no_overlap;
+alter table public.appointments add constraint appointments_no_overlap
+  exclude using gist (barber_id with =, tstzrange(starts_at, occupied_until) with &&)
+  where (status not in ('CANCELLED', 'NO_SHOW', 'RESCHEDULED') and deleted_at is null);
+
+create or replace function app.barber_busy_ranges(p_barber uuid, p_from timestamptz, p_to timestamptz, p_ignore_appointment uuid default null)
+returns tstzmultirange language sql stable security definer set search_path = public, pg_temp as $$
+  select coalesce(range_agg(tstzrange(a.starts_at, a.occupied_until)), '{}')
+    from public.appointments a
+   where a.barber_id = p_barber
+     and a.deleted_at is null
+     and a.status not in ('CANCELLED', 'NO_SHOW', 'RESCHEDULED')
+     and a.starts_at < p_to and a.occupied_until > p_from
+     and (p_ignore_appointment is null or a.id <> p_ignore_appointment)
+$$;
+
+-- ---------------------------------------------------------------------------
+-- Smart service time: each barber's real average per service
+-- ---------------------------------------------------------------------------
+alter table public.booking_settings add column smart_durations boolean not null default true;
+
+-- Average of the barber's last 20 timed single-service cuts (≥ 5 needed),
+-- rounded UP to 5 minutes so a learned duration never makes the barber late.
+create or replace function app.learned_minutes(p_barber uuid, p_service uuid)
+returns int language sql stable security definer set search_path = public, pg_temp as $$
+  select case when count(*) >= 5 then (ceil(avg(m) / 5.0) * 5)::int end
+    from (
+      select a.actual_duration_seconds / 60.0 as m
+        from public.appointments a
+       where a.barber_id = p_barber and a.status = 'COMPLETED' and a.kind = 'appointment' and a.deleted_at is null
+         and a.actual_duration_seconds >= 60
+         and a.actual_duration_seconds <= 3 * extract(epoch from (a.ends_at - a.starts_at))
+         and a.completed_at > now() - interval '180 days'
+         and (select array_agg(x.service_id) from public.appointment_services x where x.appointment_id = a.id) = array[p_service]
+       order by a.actual_started_at desc nulls last
+       limit 20) t
+$$;
+
+-- Effective price/duration of services for a barber. Duration precedence:
+-- explicit per-barber override › learned average (clamped to 60–150% of the
+-- service default, when smart durations are on) › service default.
+create or replace function app.barber_service_quote(p_barber uuid, p_services uuid[])
+returns table (duration_minutes int, price_cents bigint) language sql stable security definer set search_path = public, pg_temp as $$
+  select sum(coalesce(bs.duration_minutes,
+                      case when l.lm is not null
+                           then greatest(5, least(round(s.duration_minutes * 1.5)::int, greatest(round(s.duration_minutes * 0.6)::int, l.lm))) end,
+                      s.duration_minutes))::int,
+         sum(coalesce(bs.price_cents, s.price_cents))::bigint
+    from unnest(p_services) as req(service_id)
+    join public.services s on s.id = req.service_id and s.deleted_at is null and s.is_active
+    join public.barber_services bs on bs.service_id = s.id and bs.barber_id = p_barber and bs.is_active
+    join public.booking_settings bk on bk.shop_id = s.shop_id
+    left join lateral (select app.learned_minutes(p_barber, s.id) as lm where bk.smart_durations and bs.duration_minutes is null) l on true
+  having count(*) = cardinality(p_services)
+$$;
+
+-- Per barber × service timing table (analytics + "Kevin got slower" insights).
+create or replace function public.service_time_stats(p_shop_id uuid, p_barber_id uuid default null)
+returns table (barber_id uuid, barber_name text, service_id uuid, service_name text, default_minutes int, booked_minutes int,
+               learned_minutes int, avg_30d numeric, avg_prev_30d numeric, samples_30d int, samples_total int)
+language plpgsql stable security definer set search_path = public, pg_temp as $$
+#variable_conflict use_column
+begin
+  perform app.require_auth();
+  if not (app.can(p_shop_id, 'reports.shop') or (p_barber_id is not null and app.is_my_barber(p_barber_id))) then
+    perform app.fail('FORBIDDEN');
+  end if;
+  return query
+    with cuts as (
+      select a.barber_id, x.service_id, a.actual_duration_seconds / 60.0 m, a.completed_at
+        from public.appointments a
+        join public.appointment_services x on x.appointment_id = a.id
+       where a.shop_id = p_shop_id and a.status = 'COMPLETED' and a.kind = 'appointment' and a.actual_duration_seconds >= 60
+         and a.completed_at > now() - interval '60 days'
+         and (select count(*) from public.appointment_services y where y.appointment_id = a.id) = 1
+         and (p_barber_id is null or a.barber_id = p_barber_id)
+    )
+    select b.id, b.display_name, s.id, s.name, s.duration_minutes,
+           (select q.duration_minutes from app.barber_service_quote(b.id, array[s.id]) q),
+           app.learned_minutes(b.id, s.id),
+           round(avg(c.m) filter (where c.completed_at > now() - interval '30 days'), 1),
+           round(avg(c.m) filter (where c.completed_at <= now() - interval '30 days'), 1),
+           (count(c.m) filter (where c.completed_at > now() - interval '30 days'))::int,
+           count(c.m)::int
+      from public.barber_services bs
+      join public.barbers b on b.id = bs.barber_id and b.deleted_at is null and b.status = 'active'
+      join public.services s on s.id = bs.service_id and s.deleted_at is null and s.is_active
+      left join cuts c on c.barber_id = b.id and c.service_id = s.id
+     where b.shop_id = p_shop_id and bs.is_active and (p_barber_id is null or b.id = p_barber_id)
+     group by b.id, b.display_name, s.id, s.name, s.duration_minutes, s.sort_order
+     order by b.display_name, s.sort_order, s.name;
+end $$;
+
+-- ---------------------------------------------------------------------------
+-- Walk-in queue: shared simulation (staff + public views), public tickets
+-- ---------------------------------------------------------------------------
+alter table public.walk_ins
+  add column public_token uuid not null unique default gen_random_uuid(),
+  add column channel text not null default 'staff' check (channel in ('staff', 'online')),
+  add column almost_ready_notified_at timestamptz;
+
+alter table public.notifications add column walk_in_id uuid references public.walk_ins (id) on delete cascade;
+
+-- Queue simulation without permission checks (internal).
+create or replace function app.walk_in_queue_rows(p_shop_id uuid)
+returns table (id uuid, name text, phone text, service_id uuid, service_name text, preferred_barber_id uuid,
+               status public.walk_in_status, created_at timestamptz, queue_position int,
+               estimated_start timestamptz, estimated_wait_minutes int, likely_barber_id uuid, client_id uuid, notes text, channel text)
+language plpgsql stable security definer set search_path = public, pg_temp as $$
+#variable_conflict use_column
+declare
+  w record;
+  v_cursor jsonb := '{}'::jsonb;   -- barber_id -> next free timestamptz
+  v_best_barber uuid;
+  v_best_start timestamptz;
+  s record;
+  v_pos int := 0;
+  v_dur int;
+begin
+  for w in
+    select wi.*, sv.name as service_name, sv.duration_minutes
+      from public.walk_ins wi left join public.services sv on sv.id = wi.service_id
+     where wi.shop_id = p_shop_id and wi.status in ('waiting', 'called')
+       and wi.created_at > now() - interval '18 hours'
+     order by wi.created_at
+  loop
+    v_pos := v_pos + 1;
+    v_best_barber := null; v_best_start := null;
+    if w.service_id is not null then
+      for s in
+        select distinct on (cs.barber_id) cs.barber_id, cs.starts_at
+          from app.compute_slots(p_shop_id, array[w.service_id], w.preferred_barber_id, now(), now() + interval '12 hours', true) cs
+          join public.barbers br on br.id = cs.barber_id
+         where cs.starts_at >= coalesce((v_cursor ->> cs.barber_id::text)::timestamptz, now() - interval '1 minute')
+           and br.presence <> 'offline'
+         order by cs.barber_id, cs.starts_at
+      loop
+        if v_best_start is null or s.starts_at < v_best_start then
+          v_best_start := s.starts_at; v_best_barber := s.barber_id;
+        end if;
+      end loop;
+    end if;
+    if v_best_barber is not null then
+      v_dur := coalesce((select duration_minutes from app.barber_service_quote(v_best_barber, array[w.service_id])), w.duration_minutes, 30);
+      v_cursor := v_cursor || jsonb_build_object(v_best_barber::text, v_best_start + make_interval(mins => v_dur));
+    end if;
+    id := w.id; name := w.name; phone := w.phone; service_id := w.service_id; service_name := w.service_name;
+    preferred_barber_id := w.preferred_barber_id; status := w.status; created_at := w.created_at; queue_position := v_pos;
+    estimated_start := v_best_start;
+    estimated_wait_minutes := case when v_best_start is not null then greatest(0, ceil(extract(epoch from v_best_start - now()) / 60))::int end;
+    likely_barber_id := v_best_barber; client_id := w.client_id; notes := w.notes; channel := w.channel;
+    return next;
+  end loop;
+end $$;
+
+drop function public.walk_in_queue(uuid);
+create function public.walk_in_queue(p_shop_id uuid)
+returns table (id uuid, name text, phone text, service_id uuid, service_name text, preferred_barber_id uuid,
+               status public.walk_in_status, created_at timestamptz, queue_position int,
+               estimated_start timestamptz, estimated_wait_minutes int, likely_barber_id uuid, client_id uuid, notes text, channel text)
+language plpgsql security definer set search_path = public, pg_temp as $$
+begin
+  perform app.require_auth();
+  if not app.is_staff(p_shop_id) then perform app.fail('FORBIDDEN'); end if;
+  return query select * from app.walk_in_queue_rows(p_shop_id);
+end $$;
+
+-- Queue a WhatsApp/SMS (shop setting) + email (if known) to a walk-in.
+create or replace function app.notify_walk_in(p_walk_in uuid, p_event text, p_extra jsonb default '{}'::jsonb)
+returns void language plpgsql security definer set search_path = public, pg_temp as $$
+declare w record; v_payload jsonb;
+begin
+  select wi.id, wi.shop_id, wi.name, wi.phone, wi.client_id, wi.public_token, c.email, c.user_id, ss.sms_channel,
+         s.name shop_name, s.slug shop_slug, b.display_name barber_name
+    into w
+    from public.walk_ins wi
+    join public.shops s on s.id = wi.shop_id
+    join public.shop_settings ss on ss.shop_id = wi.shop_id
+    left join public.clients c on c.id = wi.client_id
+    left join public.barbers b on b.id = coalesce(wi.assigned_barber_id, wi.preferred_barber_id)
+   where wi.id = p_walk_in;
+  if w.id is null then return; end if;
+  v_payload := jsonb_build_object('client_first_name', split_part(w.name, ' ', 1), 'shop_name', w.shop_name,
+                                  'barber_name', coalesce(w.barber_name, 'your barber'),
+                                  'ticket_url', '/q/' || w.public_token, 'book_url', '/shop/' || w.shop_slug) || p_extra;
+  if w.sms_channel <> 'none' and app.normalize_phone(w.phone) is not null then
+    insert into public.notifications (shop_id, event, channel, audience, client_id, user_id, walk_in_id, to_address, payload, dedupe_key)
+    values (w.shop_id, p_event, w.sms_channel::public.notification_channel, 'client', w.client_id, w.user_id, w.id,
+            app.normalize_phone(w.phone), v_payload, p_event || ':' || w.id || ':m')
+    on conflict (dedupe_key) do nothing;
+  end if;
+  if w.email is not null then
+    insert into public.notifications (shop_id, event, channel, audience, client_id, user_id, walk_in_id, to_address, payload, dedupe_key)
+    values (w.shop_id, p_event, 'email', 'client', w.client_id, w.user_id, w.id, w.email, v_payload, p_event || ':' || w.id || ':e')
+    on conflict (dedupe_key) do nothing;
+  end if;
+end $$;
+
+-- "You're almost up": notify waiting walk-ins whose estimate dropped under the threshold.
+create or replace function app.notify_queue_progress(p_shop uuid)
+returns int language plpgsql security definer set search_path = public, pg_temp as $$
+declare r record; v_threshold int; v_n int := 0;
+begin
+  if not exists (select 1 from public.walk_ins where shop_id = p_shop and status = 'waiting'
+                   and almost_ready_notified_at is null and created_at > now() - interval '18 hours') then
+    return 0;
+  end if;
+  select queue_almost_ready_minutes into v_threshold from public.shop_settings where shop_id = p_shop;
+  for r in select q.* from app.walk_in_queue_rows(p_shop) q
+             join public.walk_ins w on w.id = q.id
+            where q.status = 'waiting' and w.almost_ready_notified_at is null
+              and q.estimated_wait_minutes is not null and q.estimated_wait_minutes <= v_threshold loop
+    perform app.notify_walk_in(r.id, 'queue.almost_ready', jsonb_build_object('wait', r.estimated_wait_minutes));
+    update public.walk_ins set almost_ready_notified_at = now() where id = r.id;
+    v_n := v_n + 1;
+  end loop;
+  return v_n;
+end $$;
+
+create or replace function app.walk_ins_after_change()
+returns trigger language plpgsql security definer set search_path = public, pg_temp as $$
+begin
+  if new.status is distinct from old.status and new.status in ('called', 'serving') and old.status = 'waiting' then
+    perform app.notify_walk_in(new.id, 'queue.your_turn');
+  end if;
+  if new.status is distinct from old.status and old.status in ('waiting', 'called') then
+    perform app.notify_queue_progress(new.shop_id);
+  end if;
+  return null;
+end $$;
+create trigger walk_ins_after_change after update of status on public.walk_ins
+  for each row execute function app.walk_ins_after_change();
+
+-- A chair frees up → people further back in the queue move closer.
+create or replace function app.appointments_queue_trigger()
+returns trigger language plpgsql security definer set search_path = public, pg_temp as $$
+begin
+  if new.status is distinct from old.status and new.status in ('COMPLETED', 'CANCELLED', 'NO_SHOW') then
+    perform app.notify_queue_progress(new.shop_id);
+  end if;
+  return null;
+end $$;
+create trigger appointments_queue_progress after update of status on public.appointments
+  for each row execute function app.appointments_queue_trigger();
+
+-- Customer joins the walk-in queue from the shop page / QR code (no account).
+create or replace function public.join_walk_in_queue(
+  p_shop_id uuid, p_name text, p_phone text, p_service_id uuid, p_barber_id uuid default null)
+returns jsonb language plpgsql security definer set search_path = public, pg_temp as $$
+declare v_id uuid; v_token uuid; v_client uuid; v_waiting int; r record;
+begin
+  if not exists (select 1 from public.shops s join public.shop_settings ss on ss.shop_id = s.id
+                  where s.id = p_shop_id and s.deleted_at is null and s.is_published and ss.walk_ins_enabled)
+     or not app.shop_has_feature(p_shop_id, 'walk_ins') then
+    perform app.fail('QUEUE_CLOSED');
+  end if;
+  if length(trim(coalesce(p_name, ''))) = 0 then perform app.fail('NAME_REQUIRED'); end if;
+  if app.normalize_phone(p_phone) is null or length(app.normalize_phone(p_phone)) < 7 then perform app.fail('PHONE_REQUIRED'); end if;
+  if not exists (select 1 from public.services s where s.id = p_service_id and s.shop_id = p_shop_id
+                   and s.is_active and s.is_public and s.deleted_at is null) then
+    perform app.fail('SERVICE_NOT_BOOKABLE');
+  end if;
+  if p_barber_id is not null and not exists (
+       select 1 from public.barber_services bs join public.barbers b on b.id = bs.barber_id
+        where bs.barber_id = p_barber_id and bs.service_id = p_service_id and bs.is_active
+          and b.shop_id = p_shop_id and b.status = 'active' and b.deleted_at is null) then
+    perform app.fail('SERVICE_NOT_OFFERED');
+  end if;
+  -- Idempotent per phone: rejoining returns the existing ticket.
+  select w.id, w.public_token into v_id, v_token from public.walk_ins w
+   where w.shop_id = p_shop_id and w.status in ('waiting', 'called') and w.created_at > now() - interval '12 hours'
+     and app.normalize_phone(w.phone) = app.normalize_phone(p_phone)
+   limit 1;
+  if v_id is null then
+    select count(*) into v_waiting from public.walk_ins
+     where shop_id = p_shop_id and status in ('waiting', 'called') and created_at > now() - interval '12 hours';
+    if v_waiting >= 40 then perform app.fail('QUEUE_FULL'); end if;
+    -- Opening hours: don't take people when nobody can serve them today.
+    if not exists (select 1 from app.compute_slots(p_shop_id, array[p_service_id], p_barber_id, now(), now() + interval '12 hours', true)) then
+      perform app.fail('NO_CAPACITY_TODAY');
+    end if;
+    v_client := app.upsert_client(p_shop_id, jsonb_build_object(
+      'first_name', split_part(trim(p_name), ' ', 1),
+      'last_name', nullif(substr(trim(p_name), length(split_part(trim(p_name), ' ', 1)) + 2), ''),
+      'phone', p_phone), 'walk_in');
+    insert into public.walk_ins (shop_id, client_id, name, phone, service_id, preferred_barber_id, channel)
+    values (p_shop_id, v_client, trim(p_name), p_phone, p_service_id, p_barber_id, 'online')
+    returning id, public_token into v_id, v_token;
+    select * into r from app.walk_in_queue_rows(p_shop_id) q where q.id = v_id;
+    update public.walk_ins set quoted_wait_minutes = r.estimated_wait_minutes where id = v_id;
+    perform app.notify_walk_in(v_id, 'queue.joined', jsonb_build_object('position', r.queue_position, 'wait', r.estimated_wait_minutes));
+  end if;
+  return jsonb_build_object('token', v_token, 'walk_in_id', v_id);
+end $$;
+
+-- Live ticket for the customer (token = capability).
+create or replace function public.get_walk_in_ticket(p_token uuid)
+returns jsonb language plpgsql security definer set search_path = public, pg_temp as $$
+declare w public.walk_ins; s public.shops; v_threshold int; v_wait int; v_pos int; v_start timestamptz; v_likely uuid; v_appt record;
+begin
+  select * into w from public.walk_ins where public_token = p_token;
+  if w.id is null then return null; end if;
+  select * into s from public.shops where id = w.shop_id;
+  select queue_almost_ready_minutes into v_threshold from public.shop_settings where shop_id = w.shop_id;
+  if w.status in ('waiting', 'called') then
+    select q.estimated_wait_minutes, q.queue_position, q.estimated_start, q.likely_barber_id
+      into v_wait, v_pos, v_start, v_likely
+      from app.walk_in_queue_rows(w.shop_id) q where q.id = w.id;
+    if w.status = 'waiting' and w.almost_ready_notified_at is null and v_wait is not null and v_wait <= v_threshold then
+      perform app.notify_walk_in(w.id, 'queue.almost_ready', jsonb_build_object('wait', v_wait));
+      update public.walk_ins set almost_ready_notified_at = now() where id = w.id;
+    end if;
+  end if;
+  select a.status, a.actual_started_at, a.ends_at, a.starts_at into v_appt from public.appointments a where a.id = w.appointment_id;
+  return jsonb_build_object(
+    'id', w.id, 'status', w.status, 'name', split_part(w.name, ' ', 1), 'created_at', w.created_at,
+    'position', v_pos, 'ahead', greatest(coalesce(v_pos, 1) - 1, 0),
+    'estimated_wait_minutes', v_wait,
+    'wait_low', case when v_wait is not null then greatest(0, v_wait - greatest(5, v_wait / 5)) end,
+    'wait_high', case when v_wait is not null then v_wait + greatest(5, v_wait / 5) end,
+    'estimated_start', v_start,
+    'almost_ready', v_wait is not null and v_wait <= v_threshold,
+    'service_name', (select name from public.services where id = w.service_id),
+    'preferred_barber', (select display_name from public.barbers where id = w.preferred_barber_id),
+    'likely_barber', (select display_name from public.barbers where id = coalesce(w.assigned_barber_id, v_likely)),
+    'appointment', case when v_appt.status is not null then jsonb_build_object('status', v_appt.status, 'actual_started_at', v_appt.actual_started_at,
+                                                                               'scheduled_minutes', extract(epoch from v_appt.ends_at - v_appt.starts_at)::int / 60) end,
+    'avg_service_minutes', (select duration_minutes from public.services where id = w.service_id),
+    'shop', jsonb_build_object('name', s.name, 'slug', s.slug, 'accent_color', s.accent_color, 'timezone', s.timezone, 'phone', s.phone,
+                               'address', concat_ws(', ', s.address_line1, s.city)));
+end $$;
+
+create or replace function public.leave_walk_in_queue(p_token uuid)
+returns void language plpgsql security definer set search_path = public, pg_temp as $$
+begin
+  update public.walk_ins set status = 'left', left_at = now()
+   where public_token = p_token and status in ('waiting', 'called');
+end $$;
+
+-- ---------------------------------------------------------------------------
+-- Live barber status
+--   CUTTING  · a cut is running (est. finish from the learned duration)
+--   BOOKED   · a booked client's slot covers now (not started yet)
+--   BREAK    · barber on break / lunch gap / blocked time
+--   QUEUE    · free, but walk-ins are waiting for this barber
+--   AVAILABLE· free right now
+--   OFFLINE  · went offline, hasn't started yet, or done for today
+--   NOT_WORKING · no hours today
+-- ---------------------------------------------------------------------------
+create or replace function app.barber_live(p_barber uuid)
+returns jsonb language plpgsql stable security definer set search_path = public, pg_temp as $$
+declare
+  b public.barbers; v_tz text; v_now timestamptz := now(); v_day date;
+  v_open tstzmultirange; v_start_today timestamptz; v_end_today timestamptz;
+  cur record; v_blk timestamptz; v_appt timestamptz;
+  v_status text; v_until timestamptz; v_note text;
+  v_queue int; v_avg int; v_dur int; v_wait int; v_next timestamptz; v_svc uuid; v_svc_dur int;
+begin
+  select * into b from public.barbers where id = p_barber;
+  if b.id is null then return null; end if;
+  select timezone into v_tz from public.shops where id = b.shop_id;
+  v_day := (v_now at time zone v_tz)::date;
+  v_open := app.barber_open_ranges(p_barber, app.local_ts(v_day, '00:00', v_tz), app.local_ts(v_day + 1, '00:00', v_tz));
+  if not isempty(v_open) then
+    v_start_today := lower(v_open); v_end_today := upper(v_open);
+  end if;
+
+  select round(avg(t.actual_duration_seconds) / 60.0)::int into v_avg
+    from (select a.actual_duration_seconds from public.appointments a
+           where a.barber_id = p_barber and a.status = 'COMPLETED' and a.actual_duration_seconds >= 60
+           order by a.actual_started_at desc nulls last limit 50) t;
+
+  select count(*) into v_queue from public.walk_ins w
+   where w.shop_id = b.shop_id and w.status in ('waiting', 'called') and w.preferred_barber_id = p_barber
+     and w.created_at > v_now - interval '18 hours';
+
+  select bs.service_id, coalesce(bs.duration_minutes, s.duration_minutes) into v_svc, v_svc_dur
+    from public.barber_services bs join public.services s on s.id = bs.service_id
+   where bs.barber_id = p_barber and bs.is_active and s.is_active and s.is_public and s.deleted_at is null
+   order by coalesce(bs.duration_minutes, s.duration_minutes), s.sort_order limit 1;
+
+  select a.id, a.actual_started_at, a.starts_at, a.ends_at,
+         (select array_agg(x.service_id order by x.position) from public.appointment_services x where x.appointment_id = a.id) svcs,
+         (select string_agg(x.name, ' + ' order by x.position) from public.appointment_services x where x.appointment_id = a.id) svc_name
+    into cur
+    from public.appointments a
+   where a.barber_id = p_barber and a.status = 'IN_SERVICE' and a.deleted_at is null
+   order by a.actual_started_at desc nulls last limit 1;
+
+  if cur.id is not null then
+    v_status := 'CUTTING';
+    v_dur := coalesce((select q.duration_minutes from app.barber_service_quote(p_barber, cur.svcs) q),
+                      (extract(epoch from cur.ends_at - cur.starts_at) / 60)::int);
+    v_until := greatest(coalesce(cur.actual_started_at, cur.starts_at) + make_interval(mins => v_dur), v_now + interval '2 minutes');
+  elsif b.presence = 'offline' then
+    v_status := 'OFFLINE'; v_note := 'offline';
+  elsif b.presence = 'break' and (b.presence_until is null or b.presence_until > v_now) then
+    v_status := 'BREAK'; v_until := b.presence_until;
+  elsif isempty(v_open) then
+    v_status := 'NOT_WORKING';
+  elsif not (v_open @> v_now) then
+    if v_end_today <= v_now then
+      v_status := 'OFFLINE'; v_note := 'done';
+    elsif v_start_today > v_now then
+      v_status := 'OFFLINE'; v_note := 'starts'; v_until := v_start_today;
+    else
+      v_status := 'BREAK';
+      select min(lower(r)) into v_until from unnest(v_open) r where lower(r) > v_now;
+    end if;
+  else
+    select a.ends_at into v_blk from public.appointments a
+     where a.barber_id = p_barber and a.deleted_at is null and a.kind <> 'appointment'
+       and a.status not in ('CANCELLED', 'NO_SHOW', 'RESCHEDULED') and a.starts_at <= v_now and a.ends_at > v_now
+     order by a.ends_at desc limit 1;
+    if v_blk is not null then
+      v_status := 'BREAK'; v_until := v_blk;
+    else
+      select a.blocked_until into v_appt from public.appointments a
+       where a.barber_id = p_barber and a.deleted_at is null and a.kind = 'appointment'
+         and a.status in ('BOOKED', 'CONFIRMED', 'CHECKED_IN') and a.starts_at <= v_now and a.blocked_until > v_now
+       order by a.starts_at limit 1;
+      if v_appt is not null then
+        v_status := 'BOOKED'; v_until := v_appt;
+      elsif v_queue > 0 then
+        v_status := 'QUEUE';
+      else
+        v_status := 'AVAILABLE';
+        -- Free now, but is there room for even the quickest service before the next booking?
+        if v_svc is not null and not exists (
+             select 1 from app.compute_slots(b.shop_id, array[v_svc], p_barber, v_now - interval '1 minute', v_now + interval '20 minutes', true)) then
+          v_status := 'BOOKED';
+          select min(a.starts_at) into v_until from public.appointments a
+           where a.barber_id = p_barber and a.deleted_at is null and a.starts_at > v_now
+             and a.status not in ('CANCELLED', 'NO_SHOW', 'RESCHEDULED');
+        end if;
+      end if;
+    end if;
+  end if;
+
+  -- Walk-in wait for this barber: time until free + queued clients.
+  v_wait := greatest(0, ceil(extract(epoch from coalesce(v_until, v_now) - v_now) / 60))::int
+            * (case when v_status in ('CUTTING', 'BOOKED', 'BREAK') then 1 else 0 end)
+            + v_queue * coalesce(v_avg, v_svc_dur, 30);
+
+  -- Next bookable start (online rules) for the quickest service.
+  if v_svc is not null and b.status = 'active' and b.accepts_online_booking then
+    select min(cs.starts_at) into v_next
+      from app.compute_slots(b.shop_id, array[v_svc], p_barber, v_now, app.local_ts(v_day + 1, '00:00', v_tz), false) cs;
+    if v_next is null then
+      select min(cs.starts_at) into v_next
+        from app.compute_slots(b.shop_id, array[v_svc], p_barber, app.local_ts(v_day + 1, '00:00', v_tz), v_now + interval '14 days', false) cs;
+    end if;
+  end if;
+
+  return jsonb_build_object(
+    'barber_id', p_barber, 'status', v_status, 'until', v_until, 'note', v_note, 'presence', b.presence,
+    'current', case when cur.id is not null then jsonb_build_object(
+                 'started_at', cur.actual_started_at, 'estimated_finish', v_until, 'service', cur.svc_name,
+                 'target_minutes', v_dur) end,
+    'queue_count', v_queue, 'estimated_wait_minutes', v_wait,
+    'avg_cut_minutes', v_avg, 'next_available', v_next,
+    'works_today', not isempty(v_open), 'day_starts', v_start_today, 'day_ends', v_end_today);
+end $$;
+
+create or replace function app.shop_open_now(p_shop uuid)
+returns boolean language sql stable security definer set search_path = public, pg_temp as $$
+  select exists (
+    select 1 from public.business_hours h join public.shops s on s.id = h.shop_id
+     where h.shop_id = p_shop
+       and h.weekday = extract(dow from (now() at time zone s.timezone))
+       and (now() at time zone s.timezone)::time >= h.opens_at
+       and (now() at time zone s.timezone)::time < h.closes_at)
+    and not exists (select 1 from public.availability_exceptions e
+                     where e.shop_id = p_shop and e.kind = 'closure' and e.barber_id is null
+                       and now() >= e.starts_at and now() < e.ends_at)
+$$;
+
+-- Walk-in summary for "Current estimated wait".
+create or replace function app.walk_in_summary(p_shop uuid, p_live jsonb)
+returns jsonb language plpgsql stable security definer set search_path = public, pg_temp as $$
+declare v_waiting int; v_last int; v_avg int; v_working int; v_min int;
+begin
+  select count(*), max(q.estimated_wait_minutes) into v_waiting, v_last from app.walk_in_queue_rows(p_shop) q where q.status = 'waiting';
+  select round(avg(a.actual_duration_seconds) / 60.0)::int into v_avg from public.appointments a
+   where a.shop_id = p_shop and a.status = 'COMPLETED' and a.actual_duration_seconds >= 60 and a.completed_at > now() - interval '30 days';
+  v_avg := coalesce(v_avg, (select round(avg(duration_minutes))::int from public.services where shop_id = p_shop and is_active and deleted_at is null), 30);
+  select count(*), min(case when x ->> 'status' = 'AVAILABLE' then 0
+                            when x ->> 'status' in ('CUTTING', 'BOOKED', 'BREAK', 'QUEUE') then (x ->> 'estimated_wait_minutes')::int end)
+    into v_working, v_min
+    from jsonb_array_elements(p_live) x where x ->> 'status' in ('AVAILABLE', 'CUTTING', 'BOOKED', 'BREAK', 'QUEUE');
+  return jsonb_build_object(
+    'enabled', coalesce((select walk_ins_enabled from public.shop_settings where shop_id = p_shop), false)
+               and app.shop_has_feature(p_shop, 'walk_ins'),
+    'waiting', v_waiting,
+    'avg_service_minutes', v_avg,
+    'barbers_working', v_working,
+    'estimated_wait_minutes', case when v_working = 0 then null
+                                   when v_waiting = 0 then coalesce(v_min, 0)
+                                   else coalesce(v_last, 0) + ceil(v_avg::numeric / greatest(v_working, 1))::int end);
+end $$;
+
+-- Public, live view of the shop (polled by the booking page).
+create or replace function public.get_shop_live(p_slug text)
+returns jsonb language plpgsql stable security definer set search_path = public, pg_temp as $$
+declare s public.shops; v_barbers jsonb;
+begin
+  select * into s from public.shops where (slug = lower(p_slug) or custom_domain = lower(p_slug)) and deleted_at is null;
+  if s.id is null or not (s.is_published or app.is_staff(s.id)) then return null; end if;
+  select coalesce(jsonb_agg(app.barber_live(b.id) || jsonb_build_object(
+           'name', b.display_name, 'slug', b.slug, 'title', b.title, 'photo_url', b.photo_url, 'color', b.color,
+           'chair', (select ch.label from public.chairs ch where ch.barber_id = b.id and ch.is_active))
+           order by b.sort_order, b.display_name), '[]')
+    into v_barbers
+    from public.barbers b
+   where b.shop_id = s.id and b.deleted_at is null and b.status = 'active' and b.accepts_online_booking;
+  return jsonb_build_object('now', now(), 'open_now', app.shop_open_now(s.id), 'barbers', v_barbers,
+                            'walk_ins', app.walk_in_summary(s.id, v_barbers));
+end $$;
+
+-- Staff chair board: every chair, who's in it, and their live status.
+create or replace function public.shop_live_board(p_shop_id uuid)
+returns jsonb language plpgsql stable security definer set search_path = public, pg_temp as $$
+declare v_live jsonb; v_chairs jsonb;
+begin
+  perform app.require_auth();
+  if not app.is_staff(p_shop_id) then perform app.fail('FORBIDDEN'); end if;
+  select coalesce(jsonb_agg(app.barber_live(b.id) || jsonb_build_object(
+           'name', b.display_name, 'photo_url', b.photo_url, 'color', b.color, 'barber_type', b.barber_type,
+           'chair_id', (select ch.id from public.chairs ch where ch.barber_id = b.id))
+           order by b.sort_order, b.display_name), '[]')
+    into v_live
+    from public.barbers b where b.shop_id = p_shop_id and b.deleted_at is null and b.status = 'active';
+  select coalesce(jsonb_agg(jsonb_build_object('id', ch.id, 'label', ch.label, 'position', ch.position, 'is_active', ch.is_active,
+                                               'notes', ch.notes, 'barber_id', ch.barber_id,
+                                               'barber', (select x from jsonb_array_elements(v_live) x where (x ->> 'barber_id')::uuid = ch.barber_id))
+                            order by ch.position, ch.label), '[]')
+    into v_chairs from public.chairs ch where ch.shop_id = p_shop_id;
+  return jsonb_build_object(
+    'now', now(), 'open_now', app.shop_open_now(p_shop_id),
+    'chairs', v_chairs, 'barbers', v_live,
+    'counts', jsonb_build_object(
+      'working', (select count(*) from jsonb_array_elements(v_live) x where x ->> 'status' in ('AVAILABLE', 'CUTTING', 'BOOKED', 'BREAK', 'QUEUE')),
+      'available', (select count(*) from jsonb_array_elements(v_live) x where x ->> 'status' in ('AVAILABLE', 'QUEUE')),
+      'cutting', (select count(*) from jsonb_array_elements(v_live) x where x ->> 'status' in ('CUTTING', 'BOOKED')),
+      'on_break', (select count(*) from jsonb_array_elements(v_live) x where x ->> 'status' = 'BREAK'),
+      'off', (select count(*) from jsonb_array_elements(v_live) x where x ->> 'status' in ('OFFLINE', 'NOT_WORKING'))),
+    'walk_ins', app.walk_in_summary(p_shop_id, v_live));
+end $$;
+
+-- Barber taps "Break", "Offline" or "Back".
+create or replace function public.set_my_presence(p_barber_id uuid, p_presence text, p_minutes int default null)
+returns void language plpgsql security definer set search_path = public, pg_temp as $$
+begin
+  perform app.require_auth();
+  if not app.can_manage_barber_calendar(p_barber_id) then perform app.fail('FORBIDDEN'); end if;
+  if p_presence not in ('auto', 'break', 'offline') then perform app.fail('INVALID_STATUS'); end if;
+  update public.barbers
+     set presence = p_presence,
+         presence_until = case when p_presence = 'break' and p_minutes is not null then now() + make_interval(mins => p_minutes) end,
+         presence_updated_at = now()
+   where id = p_barber_id;
+end $$;
+
+-- ---------------------------------------------------------------------------
+-- Live appointment page: timer, estimated finish, barber status, rebook hint.
+-- ---------------------------------------------------------------------------
+create or replace function public.get_booking(p_token uuid)
+returns jsonb language sql stable security definer set search_path = public, pg_temp as $$
+  select app.appointment_payload(a.id) || jsonb_build_object(
+           'id', a.id, 'status', a.status, 'starts_at', a.starts_at, 'ends_at', a.ends_at,
+           'shop_id', a.shop_id, 'barber_id', a.barber_id, 'timezone', s.timezone, 'accent_color', s.accent_color,
+           'service_ids', (select jsonb_agg(x.service_id order by x.position) from public.appointment_services x where x.appointment_id = a.id),
+           'price_cents', a.expected_price_cents,
+           'currency', (select currency from public.shop_settings where shop_id = a.shop_id),
+           'address', concat_ws(', ', s.address_line1, s.city, s.region),
+           'can_cancel', bk.allow_client_cancel and a.status in ('BOOKED', 'CONFIRMED') and a.starts_at > now(),
+           'can_reschedule', bk.allow_client_reschedule and a.status in ('BOOKED', 'CONFIRMED') and a.starts_at > now(),
+           'is_late', a.starts_at - now() < make_interval(hours => bk.cancellation_window_hours),
+           'cancellation_window_hours', bk.cancellation_window_hours,
+           'late_cancel_fee_cents', bk.late_cancel_fee_cents,
+           'cancellation_policy_text', bk.cancellation_policy_text,
+           'review_token', case when a.status = 'COMPLETED' and not exists (select 1 from public.reviews r where r.appointment_id = a.id) then a.review_token end,
+           -- live
+           'duration_minutes', (extract(epoch from a.ends_at - a.starts_at) / 60)::int,
+           'checked_in_at', a.checked_in_at, 'actual_started_at', a.actual_started_at,
+           'actual_finished_at', a.actual_finished_at, 'completed_at', a.completed_at,
+           'estimated_finish', case when a.status = 'IN_SERVICE' and a.actual_started_at is not null
+                                    then a.actual_started_at + (a.ends_at - a.starts_at) end,
+           'barber_photo_url', b.photo_url, 'barber_slug', b.slug,
+           'barber_live', case when a.status in ('BOOKED', 'CONFIRMED', 'CHECKED_IN') and a.starts_at < now() + interval '3 hours'
+                               then app.barber_live(a.barber_id) end,
+           'rebook_weeks', coalesce((select ceil(cp.rebook_interval_days / 7.0)::int from public.client_preferences cp where cp.client_id = a.client_id),
+                                    (select case when count(*) >= 2 then round(extract(epoch from max(x.starts_at) - min(x.starts_at)) / 86400.0 / 7 / (count(*) - 1))::int end
+                                       from public.appointments x where x.client_id = a.client_id and x.status = 'COMPLETED'),
+                                    (select default_rebook_weeks from public.shop_settings where shop_id = a.shop_id)))
+    from public.appointments a
+    join public.shops s on s.id = a.shop_id
+    join public.barbers b on b.id = a.barber_id
+    join public.booking_settings bk on bk.shop_id = a.shop_id
+   where a.manage_token = p_token and a.deleted_at is null
+$$;
+
+-- ---------------------------------------------------------------------------
+-- Operations metrics: wait time, on-time %, walk-ins, product sales.
+-- ---------------------------------------------------------------------------
+create or replace function public.shop_operations(p_shop_id uuid, p_from date, p_to date, p_barber_id uuid default null)
+returns jsonb language plpgsql stable security definer set search_path = public, pg_temp as $$
+declare v_tz text; v_from timestamptz; v_to timestamptz;
+begin
+  perform app.require_auth();
+  if not (app.can(p_shop_id, 'reports.shop') or (p_barber_id is not null and app.is_my_barber(p_barber_id))) then
+    perform app.fail('FORBIDDEN');
+  end if;
+  select timezone into v_tz from public.shops where id = p_shop_id;
+  v_from := app.local_ts(p_from, '00:00', v_tz);
+  v_to := app.local_ts(p_to + 1, '00:00', v_tz);
+  return (
+    with appts as (
+      select a.* from public.appointments a
+       where a.shop_id = p_shop_id and a.kind = 'appointment' and a.deleted_at is null
+         and a.starts_at >= v_from and a.starts_at < v_to and (p_barber_id is null or a.barber_id = p_barber_id)
+    ), waits as (
+      -- booked clients: start − max(booked time, arrival); walk-ins: seated − joined
+      select greatest(0, extract(epoch from a.actual_started_at - greatest(a.starts_at, coalesce(a.checked_in_at, a.starts_at))) / 60) w
+        from appts a where a.source <> 'walk_in' and a.actual_started_at is not null
+      union all
+      select greatest(0, extract(epoch from coalesce(w.served_at, w.called_at) - w.created_at) / 60)
+        from public.walk_ins w
+       where w.shop_id = p_shop_id and w.created_at >= v_from and w.created_at < v_to and coalesce(w.served_at, w.called_at) is not null
+         and (p_barber_id is null or w.assigned_barber_id = p_barber_id)
+    )
+    select jsonb_build_object(
+      'walk_ins', (select count(*) from public.walk_ins w where w.shop_id = p_shop_id and w.created_at >= v_from and w.created_at < v_to
+                     and (p_barber_id is null or w.assigned_barber_id = p_barber_id)),
+      'walk_ins_served', (select count(*) from appts where source = 'walk_in' and status = 'COMPLETED'),
+      'walk_ins_left', (select count(*) from public.walk_ins w where w.shop_id = p_shop_id and w.created_at >= v_from and w.created_at < v_to
+                          and w.status in ('left', 'cancelled') and p_barber_id is null),
+      'avg_wait_minutes', (select round(avg(w)::numeric, 1) from waits),
+      'on_time_pct', app.pct((select count(*) from appts where source <> 'walk_in' and actual_started_at is not null
+                                and actual_started_at <= starts_at + interval '5 minutes'),
+                             (select count(*) from appts where source <> 'walk_in' and actual_started_at is not null)),
+      'timed_cuts', (select count(*) from appts where actual_duration_seconds >= 60),
+      'product_sales_cents', (select coalesce(sum(p.subtotal_cents - p.discount_cents - p.refunded_cents), 0) from public.payments p
+                               where p.shop_id = p_shop_id and p.kind = 'product' and p.status <> 'VOID'
+                                 and p.paid_at >= v_from and p.paid_at < v_to and (p_barber_id is null or p.barber_id = p_barber_id)),
+      'products_sold', (select coalesce(sum(-m.qty_delta), 0) from public.inventory_movements m
+                         where m.shop_id = p_shop_id and m.kind = 'sale' and m.created_at >= v_from and m.created_at < v_to
+                           and (p_barber_id is null or m.barber_id = p_barber_id)
+                           and (m.owner_barber_id is null or app.is_my_barber(m.owner_barber_id)))
+    ));
+end $$;
+
+-- ---------------------------------------------------------------------------
+-- Notifications: WhatsApp / SMS alongside email; channel templates fall back
+-- to the email text.
+-- ---------------------------------------------------------------------------
+create or replace function app.notify_client(
+  p_appt uuid, p_event text, p_scheduled_for timestamptz default now(), p_dedupe text default null, p_extra jsonb default '{}'::jsonb)
+returns void language plpgsql security definer set search_path = public, pg_temp as $$
+declare a record; v_payload jsonb;
+begin
+  select ap.shop_id, ap.client_id, c.email, c.user_id, c.phone, ss.sms_channel into a
+    from public.appointments ap
+    left join public.clients c on c.id = ap.client_id
+    join public.shop_settings ss on ss.shop_id = ap.shop_id
+   where ap.id = p_appt;
+  if a.client_id is null then return; end if;
+  v_payload := app.appointment_payload(p_appt) || p_extra;
+  insert into public.notifications (shop_id, event, channel, audience, client_id, user_id, appointment_id, to_address,
+                                    payload, scheduled_for, status, dedupe_key)
+  values (a.shop_id, p_event, 'email', 'client', a.client_id, a.user_id, p_appt, a.email::text,
+          v_payload, p_scheduled_for,
+          case when a.email is null then 'skipped' else 'queued' end::public.notification_status, p_dedupe)
+  on conflict (dedupe_key) do nothing;
+  if a.sms_channel <> 'none' and app.normalize_phone(a.phone) is not null and p_event <> 'payment.recorded' then
+    insert into public.notifications (shop_id, event, channel, audience, client_id, user_id, appointment_id, to_address,
+                                      payload, scheduled_for, dedupe_key)
+    values (a.shop_id, p_event, a.sms_channel::public.notification_channel, 'client', a.client_id, a.user_id, p_appt,
+            app.normalize_phone(a.phone), v_payload, p_scheduled_for, p_dedupe || ':m')
+    on conflict (dedupe_key) do nothing;
+  end if;
+end $$;
+
+create or replace function public.notification_template(p_shop_id uuid, p_event text, p_channel public.notification_channel)
+returns public.notification_templates language sql stable security definer set search_path = public, pg_temp as $$
+  select * from public.notification_templates
+   where event = p_event and is_active and (shop_id = p_shop_id or shop_id is null)
+     and (channel = p_channel or (p_channel in ('sms', 'whatsapp', 'push') and channel = 'email'))
+   order by (channel = p_channel) desc, shop_id nulls last limit 1
+$$;
+
+insert into public.notification_templates (shop_id, event, channel, subject, body) values
+  (null, 'queue.joined', 'email', 'You''re in line at {{shop_name}}',
+   'Hey {{client_first_name}} 👋 You''re #{{position}} in line at {{shop_name}}. Estimated wait: about {{wait}} min. Follow your spot live: {{ticket_url}}'),
+  (null, 'queue.almost_ready', 'email', 'You''re almost up at {{shop_name}}',
+   'You''re almost up, {{client_first_name}}! Estimated wait: {{wait}} minutes. Head over to {{shop_name}} now. {{ticket_url}}'),
+  (null, 'queue.your_turn', 'email', 'It''s your turn at {{shop_name}}',
+   '{{client_first_name}}, it''s your turn! {{barber_name}} is ready for you at {{shop_name}}.')
+on conflict do nothing;
+
+-- Shop links in notifications point at the new public URL.
+create or replace function app.appointment_payload(p_appt uuid)
+returns jsonb language sql stable security definer set search_path = public, pg_temp as $$
+  select jsonb_build_object(
+    'shop_name', s.name, 'shop_slug', s.slug, 'shop_phone', s.phone,
+    'client_first_name', c.first_name, 'client_name', trim(c.first_name || ' ' || coalesce(c.last_name, '')),
+    'barber_name', b.display_name,
+    'service_name', coalesce((select string_agg(x.name, ' + ' order by x.position) from public.appointment_services x where x.appointment_id = a.id), a.title, 'Appointment'),
+    'when', app.fmt_when(a.starts_at, s.timezone),
+    'time', trim(to_char(a.starts_at at time zone s.timezone, 'FMHH12:MI AM')),
+    'date', to_char(a.starts_at at time zone s.timezone, 'YYYY-MM-DD'),
+    'starts_at', a.starts_at,
+    'manage_url', '/a/' || a.manage_token,
+    'confirm_url', '/a/' || a.manage_token || '?confirm=1',
+    'review_url', '/r/' || a.review_token,
+    'book_url', '/shop/' || s.slug || '/book'
+  )
+    from public.appointments a
+    join public.shops s on s.id = a.shop_id
+    join public.barbers b on b.id = a.barber_id
+    left join public.clients c on c.id = a.client_id
+   where a.id = p_appt
+$$;
+
+-- Realtime: chair board and presence changes stream to staff screens.
+do $$
+begin
+  if exists (select 1 from pg_publication where pubname = 'supabase_realtime') then
+    alter publication supabase_realtime add table public.chairs, public.barbers;
+  end if;
+end $$;
+
+grant execute on all functions in schema app to authenticated, anon, service_role;
+
+commit;

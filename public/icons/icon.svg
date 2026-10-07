@@ -1,1 +1,9 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><rect width="512" height="512" rx="112" fill="#0E0D0B"/><rect x="56" y="56" width="400" height="400" rx="96" fill="#C8A25C"/><g fill="none" stroke="#120F0A" stroke-width="34" stroke-linejoin="round" stroke-linecap="round"><path d="M132 144h84a54 54 0 0 1 0 108h-84zM132 252h96a58 58 0 0 1 0 116h-96z"/><path d="m334 196 48 70-48 70"/></g></svg>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <defs>
+    <linearGradient id="w" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#FFFFFF"/><stop offset="1" stop-color="#C9D1DB"/></linearGradient>
+    <linearGradient id="b" x1="0" y1="1" x2="1" y2="0"><stop offset="0" stop-color="#0B5FD6"/><stop offset="0.5" stop-color="#1683FF"/><stop offset="1" stop-color="#35A2FF"/></linearGradient>
+  </defs>
+  <rect width="64" height="64" rx="15" fill="#111418"/>
+  <path fill="url(#w)" d="M10 13 H31 A10 10 0 0 1 31 33 H26 L21.5 28 H31 A5 5 0 0 0 31 18 H16 V45 H27.5 L32 50 H10 Z"/>
+  <path fill="url(#b)" d="M18 33 H27 L38.5 45 L45 27 H41 L55 13 L55 28 L51.5 25 L43.5 50 H36 Z"/>
+</svg>

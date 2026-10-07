@@ -2,9 +2,9 @@ export type ThemePref = 'system' | 'light' | 'dark'
 
 export function getThemePref(): ThemePref {
   try {
-    return (localStorage.getItem('barberngo.theme') as ThemePref) || 'system'
+    return (localStorage.getItem('barberngo.theme') as ThemePref) || 'dark'
   } catch {
-    return 'system'
+    return 'dark'
   }
 }
 

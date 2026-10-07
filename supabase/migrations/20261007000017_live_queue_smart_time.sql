@@ -762,7 +762,3 @@ begin
 end $$;
 
 grant execute on all functions in schema app to authenticated, anon, service_role;
-
--- Platform templates carry the new brand.
-update public.notification_templates set subject = replace(subject, 'Autocoti', 'BarberNGo'), body = replace(body, 'Autocoti', 'BarberNGo')
- where shop_id is null and (subject like '%Autocoti%' or body like '%Autocoti%');

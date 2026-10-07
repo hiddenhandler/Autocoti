@@ -129,7 +129,7 @@ create table public.shops (
   logo_url text,
   cover_url text,
   gallery_urls text[] not null default '{}',
-  accent_color text not null default '#C8A25C' check (accent_color ~ '^#[0-9A-Fa-f]{6}$'),
+  accent_color text not null default '#1683FF' check (accent_color ~ '^#[0-9A-Fa-f]{6}$'),
   custom_domain text unique,
   is_published boolean not null default false,
   created_at timestamptz not null default now(),

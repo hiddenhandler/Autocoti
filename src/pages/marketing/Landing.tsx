@@ -1,41 +1,59 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router'
-import { Armchair, ArrowRight, CalendarClock, Check, CreditCard, DoorOpen, Gauge, Landmark, ListOrdered, Package, Play, QrCode, Radio, RotateCcw, Scissors, ShieldCheck, Sparkles, Timer, Users } from 'lucide-react'
-import { Button, cx, Logo } from '@/components/ui'
+import {
+  Armchair, ArrowRight, BarChart3, Box, CalendarCheck, CalendarClock, Check, CreditCard, DoorOpen, Gauge, Landmark, LayoutDashboard, ListOrdered,
+  Play, QrCode, Radio, Receipt, RotateCcw, ShieldCheck, Sparkles, Timer, Wallet, Zap,
+} from 'lucide-react'
+import { Badge, Button, cx, Logo, LogoMark } from '@/components/ui'
 
-// Marketing page. The product previews below are illustrative mockups and
-// are labelled as such — the product itself never shows fabricated data.
+// Marketing page. Product previews are illustrative mockups and are labelled
+// as such — the product itself never shows fabricated data.
 
 const FLOW = [
-  { k: 'SCAN', t: "Your shop's QR or link", icon: QrCode },
-  { k: 'SEE', t: 'Who is available now', icon: Users },
-  { k: 'BOOK', t: 'Or join the queue', icon: CalendarClock },
-  { k: 'CUT', t: 'Timer starts', icon: Timer },
-  { k: 'PAY', t: 'Price, tip, method', icon: CreditCard },
-  { k: 'REBOOK', t: 'Next cut, one tap', icon: RotateCcw },
+  { k: 'SCAN', t: 'Your shop’s QR or link', icon: QrCode },
+  { k: 'BOOK', t: 'Book or join the queue', icon: CalendarClock },
+  { k: 'SERVE', t: 'Cut timer per chair', icon: Timer },
+  { k: 'PAY', t: 'Price, tip, method', icon: Wallet },
+  { k: 'REBOOK', t: 'Next visit, one tap', icon: RotateCcw },
+  { k: 'GROW', t: 'Finance, analytics & AI', icon: BarChart3 },
 ]
 
-const OS = ['SHOP', 'CHAIRS', 'BARBERS', 'CUSTOMERS', 'APPOINTMENTS', 'PAYMENTS', 'ANALYTICS']
+type Status = 'live' | 'beta' | 'soon'
+const SUITE: { name: string; d: string; icon: typeof Zap; status: Status }[] = [
+  { name: 'Studio', d: 'Appointments, live barber status, walk-in queue, waitlist, clients and services.', icon: CalendarCheck, status: 'live' },
+  { name: 'Owner', d: 'Chairs, chair rent, payouts, expenses, profit and barber performance.', icon: LayoutDashboard, status: 'live' },
+  { name: 'POS', d: 'Checkout for services: price, tip, discount, promo codes and receipts.', icon: Receipt, status: 'beta' },
+  { name: 'Pay', d: 'Payment tracking across cash, card and transfer — ready for online payments.', icon: CreditCard, status: 'beta' },
+  { name: 'AI', d: 'Business assistant, smart insights and scheduling intelligence.', icon: Sparkles, status: 'live' },
+  { name: 'Inventory', d: 'Shop stock and each chair owner’s private stock, low-stock alerts and margins.', icon: Box, status: 'live' },
+  { name: 'Fiscal', d: 'Dominican Republic electronic invoicing (e-CF / DGII).', icon: ShieldCheck, status: 'soon' },
+]
+
+const CONTROL = [
+  'I know what’s happening in my shop.',
+  'I know how much we’re making.',
+  'I know which barber is performing.',
+  'I know what’s booked.',
+  'Everything is in one place.',
+]
 
 const FEATURES = [
-  { icon: Radio, t: 'Live barber status', d: 'Available, cutting, on break, queue, offline — updated by the real calendar and the haircut timer. Customers see who can take them right now.' },
-  { icon: Armchair, t: 'Chairs & chair owners', d: 'Employees on commission or chair owners who keep 100% and pay rent. Each chair owner controls their own schedule, prices, customers and money.' },
-  { icon: Package, t: 'Inventory per business', d: 'Shop stock and each chair owner’s private stock: receive, use, sell, count. Low-stock alerts, margins and cost of goods — numbers that always add up.' },
-  { icon: Landmark, t: 'Finance', d: 'Money in, money out, profit. Chair rent ledger, barber payouts, expenses — and a take-home view for every chair owner.' },
-  { icon: Play, t: 'Haircut timer & smart times', d: 'START / COMPLETE CUT records real cut time. BarberNGo learns each barber’s average per service and books with it.' },
-  { icon: CalendarClock, t: 'Smart availability', d: 'Slots come from real schedules, breaks, buffers and bookings — and a cut that finishes early frees the chair instantly.' },
-  { icon: Gauge, t: 'Chair utilization', d: 'Available vs booked chair-minutes with a weekday × hour heatmap. Know exactly when to add hours — and when you are paying for empty chairs.' },
-  { icon: CreditCard, t: 'Payments, tips, commissions', d: 'Every checkout records price, tip, discount and method. Percentage, fixed, tiered, booth-rental and hybrid commissions calculate themselves.' },
-  { icon: DoorOpen, t: 'Walk-in queue', d: 'Customers join from your QR code, see “You are #4 · 20–30 min” live, and get a WhatsApp when they’re almost up.' },
-  { icon: ListOrdered, t: 'Waitlist that refills', d: 'A cancellation instantly offers the slot to matching waitlisted clients. First to claim gets it — double booking is impossible at the database level.' },
-  { icon: Users, t: 'Client CRM & retention', d: 'Visit rhythm per client, cut notes, preferences. Active, at-risk and lost clients surface automatically — with a one-tap win-back.' },
-  { icon: Sparkles, t: 'Insights & AI assistant', d: '“Saturday 2–5 PM is at 95% capacity.” Ask “How much did Carlos earn last month?” — answered from your real numbers, never guessed.' },
-  { icon: ShieldCheck, t: 'Built for teams', d: 'Owner, manager, receptionist and barber roles enforced in the database. Barbers see their own money — never anyone else’s. Full audit log.' },
+  { icon: Radio, t: 'Live barber status', d: 'Available, cutting, on break, queue, offline — driven by the real calendar and the service timer. Customers see who can take them right now.' },
+  { icon: Armchair, t: 'Chairs & chair owners', d: 'Employees on commission or chair owners who keep 100% and pay rent. Each chair owner runs their own schedule, prices and money.' },
+  { icon: Landmark, t: 'Finance', d: 'Money in, money out, profit. Chair rent ledger, payouts, expenses — and a take-home view for every chair owner.' },
+  { icon: CalendarClock, t: 'Smart availability', d: 'Slots come from real schedules, breaks, buffers and bookings — and fill the gap right after the last client instead of a rigid grid.' },
+  { icon: Play, t: 'Service timer', d: 'Start and finish every service on the chair. Real average service time by barber, service, day and hour.' },
+  { icon: Gauge, t: 'Chair occupancy', d: 'Booked vs available time with a weekday × hour heatmap. Know when to add hours — and when you pay for empty chairs.' },
+  { icon: Wallet, t: 'Payments & commissions', d: 'Every checkout records price, tip, discount and method. Percentage, fixed, tiered, booth-rental and hybrid commissions calculate themselves.' },
+  { icon: DoorOpen, t: 'Walk-in queue', d: 'Customers join from your QR code and see “You are #4 · 20–30 min” live. One tap seats the next client.' },
+  { icon: ListOrdered, t: 'Waitlist that refills', d: 'A cancellation instantly offers the slot to matching waitlisted clients. Double booking is impossible at the database level.' },
+  { icon: Sparkles, t: 'AI business assistant', d: '“How much did we make last month?” — answered from your real numbers, never guessed.' },
+  { icon: ShieldCheck, t: 'Your shop, not a marketplace', d: 'Your own branded page and QR — customers never see other shops. Roles are enforced in the database; barbers see only their own money.' },
 ]
 
 export default function Landing() {
   useEffect(() => {
-    document.title = 'BarberNGo — Your shop. Your chairs. Your schedule.'
+    document.title = 'BarberNGo — Run Your Shop. Grow Your Business.'
   }, [])
   return (
     <div className="overflow-x-hidden">
@@ -43,94 +61,125 @@ export default function Landing() {
         <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-5">
           <Logo />
           <nav className="hidden items-center gap-7 text-sm text-muted md:flex">
-            <a href="#product" className="hover:text-ink">Product</a>
-            <a href="#features" className="hover:text-ink">Features</a>
+            <a href="#how" className="hover:text-ink">How it works</a>
+            <a href="#platform" className="hover:text-ink">Platform</a>
             <a href="#pricing" className="hover:text-ink">Pricing</a>
           </nav>
           <div className="flex items-center gap-2">
             <Link to="/login" className="hidden text-sm font-medium text-muted hover:text-ink sm:block">Sign in</Link>
-            <Link to="/signup?intent=owner"><Button size="sm">Start free</Button></Link>
+            <Link to="/signup?intent=owner"><Button size="sm">Start Free</Button></Link>
           </div>
         </div>
       </header>
 
       {/* HERO */}
       <section className="relative">
-        <div className="pointer-events-none absolute inset-0" style={{ background: 'radial-gradient(900px 500px at 75% 0%, color-mix(in oklab, var(--accent) 18%, transparent), transparent 70%)' }} />
-        <div className="relative mx-auto grid max-w-6xl items-center gap-12 px-5 pb-20 pt-16 lg:grid-cols-[1.1fr_1fr] lg:pt-24">
+        <div className="pointer-events-none absolute inset-0" style={{ background: 'radial-gradient(900px 520px at 78% -10%, color-mix(in oklab, var(--accent) 26%, transparent), transparent 70%)' }} />
+        <div className="relative mx-auto grid max-w-6xl items-center gap-12 px-5 pb-20 pt-16 lg:grid-cols-[1.05fr_1fr] lg:pt-24">
           <div className="animate-rise">
-            <div className="eyebrow mb-5 inline-flex items-center gap-2"><span className="pole inline-block h-2 w-8 rounded-full" /> For barbershop owners & chair owners</div>
-            <h1 className="display text-[58px] leading-[0.92] sm:text-[84px]">
-              Your shop. Your chairs.<br /><span className="italic text-accent">Your schedule.</span>
+            <div className="eyebrow mb-6 inline-flex items-center gap-2.5"><span className="pole inline-block h-1 w-8 rounded-full" />The operating system for modern barbershops</div>
+            <h1 className="display text-[48px] sm:text-[68px]">
+              Run Your Shop.<br /><span className="text-glow">Grow Your Business.</span>
             </h1>
-            <p className="mt-6 max-w-lg text-lg text-muted">Your own branded booking page where <b className="text-ink">your</b> customers see <b className="text-ink">your</b> barbers live, book or join the queue — plus chairs, rent, inventory and finances in one app. Know who’s available. Book your cut. Go.</p>
-            <p className="mt-3 max-w-lg text-sm text-muted">Not a marketplace: customers never see other shops.</p>
+            <p className="mt-6 max-w-xl text-lg text-muted">
+              From appointments and clients to POS, payments, inventory, staff management, analytics and electronic invoicing, BarberNGo puts everything your shop needs into one powerful platform.
+            </p>
             <div className="mt-9 flex flex-wrap gap-3">
-              <Link to="/signup?intent=owner"><Button size="xl" icon={<ArrowRight className="size-5" />} className="flex-row-reverse">START FREE</Button></Link>
-              <a href="mailto:hello@barberngo.com?subject=BarberNGo%20demo"><Button size="xl" variant="outline">BOOK A DEMO</Button></a>
+              <Link to="/signup?intent=owner"><Button size="xl" icon={<ArrowRight className="size-5" />} className="flex-row-reverse">Start Free</Button></Link>
+              <a href="#how"><Button size="xl" variant="outline">See How It Works</Button></a>
             </div>
             <div className="mt-6 flex flex-wrap gap-x-5 gap-y-2 text-sm text-muted">
-              {['14-day free trial', 'No card required', 'Set up in 2 minutes'].map((t) => <span key={t} className="inline-flex items-center gap-1.5"><Check className="size-4 text-accent" />{t}</span>)}
+              {['14-day free trial', 'No card required', 'Set up in minutes'].map((t) => <span key={t} className="inline-flex items-center gap-1.5"><Check className="size-4 text-accent" />{t}</span>)}
             </div>
           </div>
-          <HeroMockups />
+          <div className="relative">
+            <CommandCenter />
+            <div className="mt-3 text-center text-[11px] text-faint">Illustrative preview</div>
+          </div>
         </div>
       </section>
 
-      {/* FLOW */}
-      <section className="border-y border-line bg-surface">
-        <div className="mx-auto max-w-6xl px-5 py-14">
-          <div className="grid grid-cols-2 gap-y-8 sm:grid-cols-3 lg:grid-cols-6">
+      {/* SUPPORTING TAGLINE + FLOW */}
+      <section id="how" className="border-y border-line bg-surface">
+        <div className="mx-auto max-w-6xl px-5 py-16">
+          <h2 className="display text-center text-3xl sm:text-4xl">Everything your barbershop needs. <span className="text-accent">One platform.</span></h2>
+          <div className="mt-12 grid grid-cols-2 gap-y-8 sm:grid-cols-3 lg:grid-cols-6">
             {FLOW.map((f, i) => (
               <div key={f.k} className="relative flex flex-col items-center text-center">
-                {i < FLOW.length - 1 && <div className="absolute left-[calc(50%+28px)] top-6 hidden h-px w-[calc(100%-56px)] bg-gradient-to-r from-accent/70 to-line lg:block" />}
-                <div className="flex size-12 items-center justify-center rounded-2xl border border-line bg-bg"><f.icon className="size-5 text-accent" /></div>
-                <div className="mt-3 text-[12px] font-bold tracking-[0.18em]">{f.k}</div>
+                {i < FLOW.length - 1 && <div className="absolute left-[calc(50%+28px)] top-6 hidden h-px w-[calc(100%-56px)] bg-gradient-to-r from-accent/80 to-line lg:block" />}
+                <div className="flex size-12 items-center justify-center rounded-2xl border border-line bg-bg"><f.icon className="size-5 text-accent" strokeWidth={2} /></div>
+                <div className="mt-3 font-display text-[12px] font-semibold tracking-[0.16em]">{f.k}</div>
                 <div className="mt-1 text-sm text-muted">{f.t}</div>
               </div>
             ))}
           </div>
-          <p className="display mx-auto mt-12 max-w-2xl text-center text-3xl sm:text-4xl">Everything connects. The cut your barber finishes is the number you see on your dashboard.</p>
         </div>
       </section>
 
-      {/* PRODUCT */}
-      <section id="product" className="mx-auto max-w-6xl space-y-28 px-5 py-24">
-        <Showcase eyebrow="For clients" title="Book my haircut." body="Scan the shop’s QR, see which barber is free right now, book or join the walk-in queue, and watch the cut status live. Rebook the same barber in one tap. No app download needed." points={['Real-time availability', 'First available across barbers', 'Reschedule & cancel by policy', 'Waitlist when the day is full']}>
-          <PhoneBooking />
-        </Showcase>
-        <Showcase flip eyebrow="For barbers" title="Who is next?" body="The whole day from a phone. One big button starts the cut and the timer; finishing opens checkout and suggests the next booking before the client leaves." points={['Today, next client, time remaining', 'Start / finish cut timer', 'Record price, tip, payment', 'Own earnings, privately']}>
-          <PhoneBarber />
-        </Showcase>
-        <Showcase eyebrow="For owners" title="How is my shop performing?" body="Revenue, utilization, cut time, rebooking and retention — calculated from real bookings and payments, with recommendations you can act on today." points={['Revenue by barber, service, hour', 'Chair utilization vs target', 'Average cut time vs booked', 'Smart insights + AI assistant']}>
-          <OwnerDash />
-        </Showcase>
+      {/* LESS / MORE */}
+      <section className="mx-auto max-w-6xl px-5 pt-24">
+        <div className="grid gap-3 sm:grid-cols-2">
+          <div className="rounded-3xl border border-line p-8">
+            {['Less juggling.', 'Less paperwork.', 'Less guesswork.'].map((t) => <div key={t} className="display text-3xl text-muted sm:text-4xl">{t}</div>)}
+          </div>
+          <div className="rounded-3xl border border-accent/50 bg-accent-soft p-8">
+            {['More control.', 'More customers.', 'More growth.'].map((t) => <div key={t} className="display text-3xl sm:text-4xl">{t.split(' ')[0]} <span className="text-glow">{t.split(' ')[1]}</span></div>)}
+          </div>
+        </div>
       </section>
 
-      {/* OS */}
-      <section className="border-y border-line bg-surface py-20">
-        <div className="mx-auto max-w-6xl px-5 text-center">
-          <div className="eyebrow">Not just another booking app</div>
-          <h2 className="display mt-3 text-5xl sm:text-6xl">Built around your shop</h2>
-          <div className="mt-10 flex flex-wrap items-center justify-center gap-x-3 gap-y-4 text-sm font-bold tracking-[0.16em]">
-            {OS.map((o, i) => (
-              <span key={o} className="inline-flex items-center gap-3">
-                <span className={cx('rounded-full border px-4 py-2', i === 0 ? 'border-accent bg-accent text-accent-ink' : 'border-line')}>{o}</span>
-                {i < OS.length - 1 && <span className="text-accent">●</span>}
-              </span>
-            ))}
+      {/* CONTROL */}
+      <section className="mx-auto max-w-6xl px-5 py-24">
+        <div className="grid items-center gap-12 lg:grid-cols-2">
+          <div>
+            <div className="eyebrow">What you’re really getting</div>
+            <h2 className="display mt-3 text-5xl sm:text-6xl">Control.</h2>
+            <p className="mt-5 max-w-md text-lg text-muted">Not just bookings. A live view of your shop — every chair, every barber, every dollar — calculated from what actually happened.</p>
           </div>
-          <p className="mx-auto mt-8 max-w-xl text-muted">Booking is the entry point. The real value is everything that happens after the client sits down.</p>
+          <ul className="space-y-3">
+            {CONTROL.map((c, i) => (
+              <li key={c} className={cx('flex items-center gap-4 rounded-2xl border border-line bg-surface px-5 py-4 text-[17px] font-medium', i === CONTROL.length - 1 && 'border-accent/60')}>
+                <span className={cx('flex size-7 shrink-0 items-center justify-center rounded-full', i === CONTROL.length - 1 ? 'bg-accent text-accent-ink' : 'bg-accent-soft text-accent')}><Check className="size-4" /></span>
+                “{c}”
+              </li>
+            ))}
+          </ul>
+        </div>
+      </section>
+
+      {/* PLATFORM / BRAND ARCHITECTURE */}
+      <section id="platform" className="border-y border-line bg-surface py-24">
+        <div className="mx-auto max-w-6xl px-5">
+          <div className="max-w-2xl">
+            <div className="eyebrow">The BarberNGo platform</div>
+            <h2 className="display mt-3 text-4xl sm:text-5xl">One workspace. Every part of the business.</h2>
+          </div>
+          <div className="mt-12 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            {SUITE.map((m) => (
+              <div key={m.name} className={cx('rounded-2xl border border-line bg-bg p-6', m.status === 'soon' && 'opacity-80')}>
+                <div className="flex items-center justify-between">
+                  <m.icon className="size-6 text-accent" strokeWidth={2} />
+                  <Badge tone={m.status === 'live' ? 'success' : m.status === 'beta' ? 'accent' : 'neutral'}>{m.status === 'live' ? 'Available' : m.status === 'beta' ? 'Early access' : 'Coming soon'}</Badge>
+                </div>
+                <div className="mt-5 font-display text-lg font-semibold">BarberNGo <span className="text-accent">{m.name}</span></div>
+                <p className="mt-2 text-sm leading-relaxed text-muted">{m.d}</p>
+              </div>
+            ))}
+            <div className="flex flex-col justify-center rounded-2xl border border-dashed border-line-strong p-6">
+              <LogoMark size={40} />
+              <p className="mt-4 text-sm text-muted">All modules share one client list, one calendar and one source of truth for your numbers.</p>
+            </div>
+          </div>
         </div>
       </section>
 
       {/* FEATURES */}
-      <section id="features" className="mx-auto max-w-6xl px-5 py-24">
+      <section className="mx-auto max-w-6xl px-5 py-24">
         <div className="grid gap-px overflow-hidden rounded-3xl border border-line bg-line sm:grid-cols-2 lg:grid-cols-3">
           {FEATURES.map((f) => (
             <div key={f.t} className="bg-surface p-7">
-              <f.icon className="size-6 text-accent" />
-              <h3 className="mt-4 text-lg font-semibold">{f.t}</h3>
+              <f.icon className="size-6 text-accent" strokeWidth={2} />
+              <h3 className="mt-4 font-display text-lg font-semibold">{f.t}</h3>
               <p className="mt-2 text-sm leading-relaxed text-muted">{f.d}</p>
             </div>
           ))}
@@ -139,30 +188,32 @@ export default function Landing() {
 
       {/* PRICING */}
       <section id="pricing" className="mx-auto max-w-6xl px-5 pb-24">
-        <h2 className="display text-center text-5xl">Simple pricing</h2>
+        <h2 className="display text-center text-4xl sm:text-5xl">Simple pricing</h2>
         <p className="mt-3 text-center text-muted">Every plan starts with a 14-day free trial.</p>
         <div className="mt-12 grid gap-4 md:grid-cols-3">
           {[
             { n: 'Starter', p: 29, d: 'The independent barber', f: ['1 barber / chair owner', 'Your booking page + QR', 'Customers, timer & live status', 'Inventory, expenses & take-home'] },
             { n: 'Shop', p: 79, d: 'Multi-chair shops', f: ['Unlimited chairs & barbers', 'Chair owners, rent & payouts', 'Live walk-in queue & waitlist', 'Finance, analytics & exports'], hot: true },
-            { n: 'Pro', p: 149, d: 'Growth & multiple locations', f: ['Everything in Shop', 'AI insights & assistant', 'Marketing, gift cards, memberships', 'Multi-location & custom domain'] },
+            { n: 'Pro', p: 149, d: 'Growth & multiple locations', f: ['Everything in Shop', 'AI assistant & insights', 'Marketing, gift cards, memberships', 'Multi-location & custom domain'] },
           ].map((p) => (
             <div key={p.n} className={cx('rounded-3xl border p-7', p.hot ? 'border-accent bg-surface shadow-card' : 'border-line')}>
-              <div className="flex items-center justify-between"><div className="text-lg font-semibold">{p.n}</div>{p.hot && <span className="rounded-full bg-accent px-2.5 py-0.5 text-[11px] font-bold text-accent-ink">POPULAR</span>}</div>
+              <div className="flex items-center justify-between"><div className="font-display text-lg font-semibold">{p.n}</div>{p.hot && <span className="rounded-full bg-accent px-2.5 py-0.5 text-[11px] font-bold text-accent-ink">POPULAR</span>}</div>
               <div className="mt-1 text-sm text-muted">{p.d}</div>
-              <div className="mt-6 text-5xl font-semibold tracking-tight">${p.p}<span className="text-base font-normal text-muted">/mo</span></div>
+              <div className="mt-6 font-display text-5xl font-semibold tracking-tight">${p.p}<span className="font-sans text-base font-normal text-muted">/mo</span></div>
               <ul className="mt-6 space-y-2.5 text-sm">{p.f.map((x) => <li key={x} className="flex gap-2"><Check className="size-4 shrink-0 text-accent" />{x}</li>)}</ul>
-              <Link to="/signup?intent=owner"><Button block size="lg" variant={p.hot ? 'primary' : 'outline'} className="mt-8">Start free</Button></Link>
+              <Link to="/signup?intent=owner"><Button block size="lg" variant={p.hot ? 'primary' : 'outline'} className="mt-8">Start Free</Button></Link>
             </div>
           ))}
         </div>
       </section>
 
-      <section className="border-t border-line">
-        <div className="mx-auto max-w-6xl px-5 py-24 text-center">
-          <Scissors className="mx-auto size-8 text-accent" />
-          <h2 className="display mx-auto mt-6 max-w-3xl text-5xl sm:text-6xl">Your chairs, your clients, your numbers. Finally in one place.</h2>
-          <Link to="/signup?intent=owner"><Button size="xl" className="mt-10">START FREE</Button></Link>
+      <section className="relative overflow-hidden border-t border-line">
+        <div className="pointer-events-none absolute inset-0" style={{ background: 'radial-gradient(700px 300px at 50% 120%, color-mix(in oklab, var(--accent) 22%, transparent), transparent 70%)' }} />
+        <div className="relative mx-auto max-w-6xl px-5 py-24 text-center">
+          <LogoMark size={56} className="mx-auto" />
+          <h2 className="display mx-auto mt-8 max-w-3xl text-4xl sm:text-6xl">Run Your Shop.<br />Grow Your Business.</h2>
+          <p className="mt-5 text-muted"><span className="font-semibold text-ink">BarberNGo</span> — Everything your barbershop needs. One platform.</p>
+          <Link to="/signup?intent=owner"><Button size="xl" className="mt-10">Start Free</Button></Link>
         </div>
       </section>
       <footer className="border-t border-line py-10 text-center text-sm text-muted">
@@ -173,135 +224,54 @@ export default function Landing() {
   )
 }
 
-function Showcase({ eyebrow, title, body, points, children, flip }: { eyebrow: string; title: string; body: string; points: string[]; children: React.ReactNode; flip?: boolean }) {
-  return (
-    <div className={cx('grid items-center gap-12 lg:grid-cols-2', flip && 'lg:[&>*:first-child]:order-2')}>
-      <div>
-        <div className="eyebrow">{eyebrow}</div>
-        <h2 className="display mt-3 text-5xl sm:text-6xl">“{title}”</h2>
-        <p className="mt-5 max-w-md text-lg text-muted">{body}</p>
-        <ul className="mt-6 grid gap-2 text-sm sm:grid-cols-2">{points.map((p) => <li key={p} className="flex gap-2"><Check className="size-4 shrink-0 text-accent" />{p}</li>)}</ul>
-      </div>
-      <div className="relative">{children}<div className="mt-3 text-center text-[11px] text-faint">Illustrative preview</div></div>
-    </div>
-  )
-}
-
-function useTicker(ms: number, n: number) {
-  const [i, setI] = useState(0)
-  useEffect(() => {
-    const t = setInterval(() => setI((x) => (x + 1) % n), ms)
-    return () => clearInterval(t)
-  }, [ms, n])
-  return i
-}
-
-function Phone({ children, className }: { children: React.ReactNode; className?: string }) {
-  return (
-    <div className={cx('mx-auto w-[280px] rounded-[42px] border border-line-strong bg-surface p-2.5 shadow-2xl', className)}>
-      <div className="relative overflow-hidden rounded-[34px] bg-bg">
-        <div className="absolute left-1/2 top-2 z-10 h-5 w-20 -translate-x-1/2 rounded-full bg-black" />
-        <div className="h-[540px] px-4 pb-4 pt-10">{children}</div>
-      </div>
-    </div>
-  )
-}
-
-function PhoneBooking() {
-  const i = useTicker(1300, 6)
-  const times = ['2:30', '2:45', '3:30', '4:15', '4:30', '5:15']
-  return (
-    <Phone>
-      <div className="text-[11px] font-semibold text-muted">STEP 3 OF 4</div>
-      <div className="display mt-1 text-3xl">Pick a time</div>
-      <div className="mt-1 text-xs text-muted">with Carlos · Haircut · 40 min</div>
-      <div className="mt-4 flex gap-1.5">
-        {['Today', 'Fri', 'Sat', 'Sun'].map((d, k) => <div key={d} className={cx('flex-1 rounded-xl border py-2 text-center text-[11px] font-semibold', k === 0 ? 'border-accent bg-accent text-accent-ink' : 'border-line')}>{d}</div>)}
-      </div>
-      <div className="mt-5 text-[10px] font-semibold tracking-widest text-muted">AFTERNOON</div>
-      <div className="mt-2 grid grid-cols-3 gap-2">
-        {times.map((t, k) => <div key={t} className={cx('rounded-xl border py-2.5 text-center text-sm font-semibold transition-all duration-500', k === i ? 'scale-105 border-accent bg-accent-soft' : 'border-line')}>{t}</div>)}
-      </div>
-      <div className="mt-6 rounded-2xl border border-line p-3 text-xs">
-        <div className="font-semibold">First available</div>
-        {[['Carlos', '2:30 PM'], ['Luis', '2:45 PM'], ['Miguel', '3:00 PM']].map(([n, t]) => <div key={n} className="mt-2 flex justify-between"><span className="text-muted">{n}</span><span className="font-semibold">{t}</span></div>)}
-      </div>
-      <div className="mt-5 rounded-xl bg-accent py-3 text-center text-sm font-bold text-accent-ink">Confirm · $35</div>
-    </Phone>
-  )
-}
-
-function PhoneBarber() {
-  const [s, setS] = useState(37 * 60 + 12)
-  useEffect(() => {
-    const t = setInterval(() => setS((x) => (x >= 44 * 60 ? 30 * 60 : x + 1)), 1000)
-    return () => clearInterval(t)
-  }, [])
-  const pct = s / (45 * 60)
-  return (
-    <Phone>
-      <div className="text-[11px] font-semibold text-muted">TODAY</div>
-      <div className="mt-3 rounded-2xl border border-success/40 p-4 text-center">
-        <div className="inline-block rounded-full bg-success/15 px-2 py-0.5 text-[10px] font-bold text-success">IN CHAIR</div>
-        <div className="mt-2 font-semibold">John D.</div>
-        <div className="text-xs text-muted">Skin fade · booked 45 min</div>
-        <svg viewBox="0 0 120 120" className="mx-auto mt-3 size-32 -rotate-90">
-          <circle cx="60" cy="60" r="50" fill="none" stroke="var(--surface-3)" strokeWidth="7" />
-          <circle cx="60" cy="60" r="50" fill="none" stroke="var(--accent)" strokeWidth="7" strokeLinecap="round" strokeDasharray={`${pct * 314} 314`} />
-        </svg>
-        <div className="-mt-[86px] mb-12 text-2xl font-semibold tnum">{Math.floor(s / 60)}:{String(s % 60).padStart(2, '0')}</div>
-        <div className="rounded-xl bg-accent py-2.5 text-sm font-bold text-accent-ink">COMPLETE CUT</div>
-      </div>
-      <div className="mt-4 space-y-2 text-xs">
-        {[['3:30', 'Mike R.', 'Haircut + Beard'], ['4:30', 'David K.', 'Haircut'], ['5:15', 'Walk-in', 'Beard']].map(([t, n, sv]) => (
-          <div key={t} className="flex items-center gap-2 rounded-xl border border-line px-3 py-2"><span className="w-9 font-semibold">{t}</span><span className="size-1.5 rounded-full bg-accent" /><span className="flex-1">{n}</span><span className="text-muted">{sv}</span></div>
-        ))}
-      </div>
-      <div className="mt-4 grid grid-cols-3 gap-2 text-center text-[10px]">
-        {[['Cuts', '8'], ['Tips', '$74'], ['Avg cut', '37m']].map(([l, v]) => <div key={l} className="rounded-xl bg-surface-2 py-2"><div className="text-muted">{l}</div><div className="text-sm font-semibold">{v}</div></div>)}
-      </div>
-    </Phone>
-  )
-}
-
-function OwnerDash() {
+/** Hero preview: the owner command center (illustrative data, labelled as such). */
+function CommandCenter() {
   const [drawn, setDrawn] = useState(false)
   useEffect(() => {
     const t = setTimeout(() => setDrawn(true), 300)
     return () => clearTimeout(t)
   }, [])
-  const pts = [22, 28, 25, 34, 31, 42, 38, 45, 41, 52, 48, 58]
-  const path = pts.map((v, i) => `${i ? 'L' : 'M'}${(i / (pts.length - 1)) * 300},${90 - v}`).join('')
+  const pts = [18, 24, 22, 31, 29, 38, 35, 44, 41, 50, 47, 58]
+  const path = pts.map((v, i) => `${i ? 'L' : 'M'}${(i / (pts.length - 1)) * 300},${80 - v}`).join('')
+  const schedule = [['09:00', 'Carlos', 'Fade + Beard'], ['09:30', 'Marcus', 'Haircut'], ['10:00', 'David', 'Premium Cut'], ['10:45', 'Luis', 'Kids Cut']]
   return (
-    <div className="rounded-3xl border border-line-strong bg-surface p-5 shadow-2xl">
-      <div className="display text-2xl">Good morning, Ana.</div>
-      <div className="mt-4 grid grid-cols-3 gap-3">
-        {[['Revenue', '$1,240'], ['Utilization', '82%'], ['Avg cut', '38 min']].map(([l, v]) => (
-          <div key={l} className="rounded-2xl bg-surface-2 p-3"><div className="text-[10px] font-semibold uppercase tracking-wider text-muted">{l}</div><div className="mt-1 text-xl font-semibold">{v}</div></div>
+    <div className="animate-rise rounded-3xl border border-line-strong bg-surface p-5 shadow-2xl">
+      <div className="flex items-center justify-between">
+        <div>
+          <div className="font-display text-xl font-semibold">Good morning, Alex.</div>
+          <div className="text-sm text-muted">Your shop is looking good today.</div>
+        </div>
+        <LogoMark size={30} />
+      </div>
+      <div className="mt-4 grid grid-cols-4 gap-2">
+        {[['$2,840', 'Today’s revenue'], ['42', 'Appointments'], ['8', 'Barbers working'], ['94%', 'Occupancy']].map(([v, l]) => (
+          <div key={l} className="rounded-xl bg-surface-2 p-2.5">
+            <div className="font-display text-lg font-semibold leading-none">{v}</div>
+            <div className="mt-1.5 text-[10px] leading-tight text-muted">{l}</div>
+          </div>
         ))}
       </div>
-      <div className="mt-4 rounded-2xl border border-line p-3">
-        <div className="flex justify-between text-xs"><span className="font-semibold">Revenue · 12 weeks</span><span className="font-semibold text-success">↑ 12%</span></div>
-        <svg viewBox="0 0 300 95" className="mt-2 w-full">
-          <path d={`${path}L300,95L0,95Z`} fill="var(--accent)" opacity={0.1} />
-          <path d={path} fill="none" stroke="var(--accent)" strokeWidth="2" strokeLinecap="round" strokeDasharray="600" strokeDashoffset={drawn ? 0 : 600} style={{ transition: 'stroke-dashoffset 2s ease' }} />
-        </svg>
+      <div className="mt-3 grid grid-cols-[1fr_1.1fr] gap-3">
+        <div className="rounded-xl border border-line p-3">
+          <div className="eyebrow text-[9px]">Today’s schedule</div>
+          <div className="mt-2 space-y-1.5">
+            {schedule.map(([t, n, s]) => (
+              <div key={t} className="flex items-center gap-2 text-[11px]"><span className="w-9 font-semibold tnum">{t}</span><span className="size-1.5 rounded-full bg-accent" /><span className="flex-1 truncate">{n}</span><span className="truncate text-muted">{s}</span></div>
+            ))}
+          </div>
+        </div>
+        <div className="rounded-xl border border-line p-3">
+          <div className="flex justify-between"><span className="eyebrow text-[9px]">Revenue</span><span className="text-[10px] font-semibold text-success">↑ 12%</span></div>
+          <svg viewBox="0 0 300 85" className="mt-2 w-full">
+            <path d={`${path}L300,85L0,85Z`} fill="var(--accent)" opacity={0.12} />
+            <path d={path} fill="none" stroke="var(--accent)" strokeWidth="2.5" strokeLinecap="round" strokeDasharray="600" strokeDashoffset={drawn ? 0 : 600} style={{ transition: 'stroke-dashoffset 2s ease' }} />
+          </svg>
+        </div>
       </div>
-      <div className="mt-3 space-y-2">
-        {[['Carlos', 92], ['Luis', 78], ['Miguel', 64]].map(([n, v]) => (
-          <div key={n} className="flex items-center gap-3 text-xs"><span className="w-14">{n}</span><div className="h-2 flex-1 rounded-full bg-surface-2"><div className="h-2 rounded-full bg-accent transition-[width] duration-1000" style={{ width: drawn ? `${v}%` : '0%' }} /></div><span className="w-8 text-right font-semibold">{v}%</span></div>
-        ))}
+      <div className="mt-3 rounded-xl border border-accent/40 bg-accent-soft p-3 text-[12px]">
+        <div className="flex items-center gap-1.5 font-semibold"><Zap className="size-3.5 text-accent" /> AI insight</div>
+        <p className="mt-1 text-muted">Friday is trending 18% above average. <span className="text-ink">Consider opening one additional booking slot.</span></p>
       </div>
-      <div className="mt-4 rounded-2xl bg-accent-soft p-3 text-xs"><b>Insight:</b> Saturday 2–5 PM runs at 95%+. Consider extending Saturday by 2 hours.</div>
-    </div>
-  )
-}
-
-function HeroMockups() {
-  return (
-    <div className="relative mx-auto hidden h-[560px] w-full max-w-[520px] sm:block">
-      <div className="absolute right-0 top-6 w-[360px] rotate-2"><OwnerDash /></div>
-      <div className="absolute -left-2 top-24 -rotate-3 scale-[0.82]"><PhoneBooking /></div>
     </div>
   )
 }

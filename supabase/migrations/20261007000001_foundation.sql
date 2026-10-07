@@ -1,5 +1,5 @@
 -- =============================================================================
--- Autocoti — foundation: extensions, private schema, enums, shared helpers
+-- BarberNGo — foundation: extensions, private schema, enums, shared helpers
 -- =============================================================================
 -- Conventions
 --   * Money is stored as integer cents (bigint) — never floats.

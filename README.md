@@ -1,4 +1,6 @@
-# BarberNGo — Your shop. Your chairs. Your schedule.
+# BarberNGo — Run Your Shop. Grow Your Business.
+
+**Everything your barbershop needs. One platform.** The operating system for modern barbershops.
 
 A SaaS for **barbershop owners and independent chair owners**. It is **not a marketplace**: every shop gets its own branded page (`/shop/:slug`, plus a QR code) where *its* customers see *its* barbers' live status, book, or join the walk-in queue.
 
