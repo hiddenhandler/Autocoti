@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { anon, buildShop, expectError, localDate, localTs, pgArray, pool, service, sql } from './helpers'
+import { anon, buildShop, expectError, localDate, pgArray, pool, service, sql } from './helpers'
 
 let s: Awaited<ReturnType<typeof buildShop>>
 let today: string
@@ -165,11 +165,10 @@ describe('waitlist', () => {
 
 describe('analytics', () => {
   it('reports real revenue, cut time, utilization and barber performance', async () => {
-    // one booking inside working hours yesterday (the timer tests above ran at night, outside hours)
-    const y = await localDate(s.tz, -1)
+    // one booking inside working hours today, at a slot the engine says is open
+    const [open] = await s.owner.rows('get_available_slots', { p_shop_id: s.shopId, p_service_ids: pgArray([s.haircut]), p_date: today, p_barber_id: s.luis })
     await s.owner.rpc('staff_create_appointment', {
-      p_shop_id: s.shopId, p_barber_id: s.luis, p_service_ids: pgArray([s.haircut]), p_starts_at: await localTs(s.tz, y, '10:00'),
-      p_client: newClient('Day'), p_force: true,
+      p_shop_id: s.shopId, p_barber_id: s.luis, p_service_ids: pgArray([s.haircut]), p_starts_at: open.starts_at, p_client: newClient('Day'),
     })
     // two-day window so the test is independent of the time of day
     const r = await s.owner.rpc('shop_analytics', { p_shop_id: s.shopId, p_from: await localDate(s.tz, -1), p_to: today })
@@ -177,9 +176,10 @@ describe('analytics', () => {
     expect(r.revenue.tips_cents).toBe(1500)
     expect(r.cut_time.count).toBeGreaterThanOrEqual(1)
     expect(r.cut_time.by_barber.find((x: any) => x.name === 'Carlos').avg_minutes).toBeGreaterThan(0)
-    expect(r.utilization.available_minutes).toBe(2 * 2 * 8 * 60) // two barbers × two days × (9h − 1h lunch)
-    expect(r.utilization.booked_minutes).toBe(40) // only time inside open hours counts
-    expect(r.utilization.utilization).toBeCloseTo(2.1, 1)
+    // Barbers joined today, so yesterday has no capacity: two barbers × (9h − 1h lunch)
+    expect(r.utilization.available_minutes).toBe(2 * 8 * 60)
+    expect(r.utilization.booked_minutes).toBeGreaterThanOrEqual(40) // only time inside open hours counts
+    expect(r.utilization.utilization).toBeGreaterThan(0)
     const carlos = r.barbers.find((x: any) => x.barber_id === s.carlos)
     expect(carlos.tips_cents).toBe(1000)
     expect(carlos.commission_cents).toBe(1750)

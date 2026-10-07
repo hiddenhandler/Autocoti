@@ -96,6 +96,12 @@ export function relativeDateStr(ds: string, tz: string): string {
 export function ago(d: Date | string | null | undefined): string {
   if (!d) return '—'
   const s = (Date.now() - new Date(d).getTime()) / 1000
+  if (s < -60) {
+    const f = -s
+    if (f < 3600) return `in ${Math.round(f / 60)}m`
+    if (f < 86400) return `in ${Math.round(f / 3600)}h`
+    return `in ${Math.round(f / 86400)}d`
+  }
   if (s < 60) return 'just now'
   if (s < 3600) return `${Math.floor(s / 60)}m ago`
   if (s < 86400) return `${Math.floor(s / 3600)}h ago`

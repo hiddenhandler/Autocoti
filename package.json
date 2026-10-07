@@ -9,8 +9,12 @@
     "preview": "vite preview",
     "typecheck": "tsc -p tsconfig.json",
     "test": "vitest run",
-    "test:db": "node scripts/test-db.mjs",
-    "test:e2e": "playwright test"
+    "test:unit": "vitest run --project unit",
+    "test:db": "vitest run --project db",
+    "e2e:stack": "scripts/e2e/stack.sh up",
+    "e2e:stack:down": "scripts/e2e/stack.sh down",
+    "test:e2e": "playwright test",
+    "db:reset": "scripts/reset-db.sh"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.117.2",

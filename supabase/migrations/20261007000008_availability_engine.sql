@@ -33,13 +33,20 @@ declare
   v_extra tstzmultirange;
   v_off tstzmultirange;
   v_window tstzrange := tstzrange(p_from, p_to);
+  v_joined timestamptz;
 begin
-  select b.shop_id, s.timezone into v_shop, v_tz
+  select b.shop_id, s.timezone, b.created_at into v_shop, v_tz, v_joined
     from public.barbers b join public.shops s on s.id = b.shop_id
    where b.id = p_barber;
   if v_shop is null then
     return '{}'::tstzmultirange;
   end if;
+  -- A chair has no capacity before its barber joined (keeps utilization honest).
+  v_joined := date_trunc('day', v_joined at time zone v_tz) at time zone v_tz;
+  if v_joined >= p_to then
+    return '{}'::tstzmultirange;
+  end if;
+  v_window := tstzrange(greatest(p_from, v_joined), p_to);
 
   v_first := (p_from at time zone v_tz)::date - 1;
   v_last  := (p_to at time zone v_tz)::date + 1;
@@ -174,7 +181,9 @@ begin
 
     v_dur := make_interval(mins => q.duration_minutes);
     v_buf := make_interval(mins => coalesce(b.buffer_minutes, bk.buffer_minutes));
-    v_open := app.barber_open_ranges(b.id, v_earliest, v_latest + v_dur);
+    -- Expand from local midnight so interval starts are real boundaries
+    -- (opening time / end of a booking), never the notice cutoff.
+    v_open := app.barber_open_ranges(b.id, app.local_ts((v_earliest at time zone v_tz)::date, '00:00', v_tz), v_latest + v_dur);
     v_busy := app.barber_busy_ranges(b.id, v_earliest - interval '1 day', v_latest + interval '1 day', p_ignore_appointment);
     v_free := v_open - v_busy;
 

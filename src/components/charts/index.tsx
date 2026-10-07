@@ -79,7 +79,7 @@ export function AreaChart({ data, height = 200, format = (v) => String(v), color
           const i = data.length <= 1 ? 0 : Math.round((px / iw) * (data.length - 1))
           setHover(Math.max(0, Math.min(data.length - 1, i)))
         }}>
-        {ticks.map((t) => (
+        {ticks.filter((t, i) => i === 0 || format(t) !== format(ticks[i - 1])).map((t) => (
           <g key={t}>
             <line x1={pad.l} x2={width - pad.r} y1={y(t)} y2={y(t)} stroke="var(--grid)" strokeWidth={1} />
             <text x={pad.l - 8} y={y(t)} dy="0.32em" textAnchor="end" className="fill-[var(--faint)] text-[10px] tnum">{format(t)}</text>
@@ -132,7 +132,7 @@ export function ColumnChart({ data, height = 180, format = (v) => String(v), hig
   return (
     <div ref={ref} className="relative w-full select-none" style={{ height }}>
       <svg width={width} height={height} role="img" aria-label={ariaLabel} onMouseLeave={() => setHover(null)}>
-        {[0, max / 2, max].map((t) => (
+        {[0, max / 2, max].filter((t, i, arr) => i === 0 || format(t) !== format(arr[i - 1])).map((t) => (
           <g key={t}>
             <line x1={pad.l} x2={width - pad.r} y1={y(t)} y2={y(t)} stroke="var(--grid)" strokeWidth={1} />
             <text x={pad.l - 6} y={y(t)} dy="0.32em" textAnchor="end" className="fill-[var(--faint)] text-[10px] tnum">{format(t)}</text>

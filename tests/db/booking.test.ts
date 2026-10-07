@@ -81,6 +81,12 @@ describe('availability engine', () => {
     await s.owner.q(`update booking_settings set max_advance_days = 60 where shop_id = $1`, [s.shopId])
   })
 
+  it('never offers odd start times derived from the notice cutoff', async () => {
+    const today = await localDate(s.tz, 0)
+    const slots = await anon.rows('get_available_slots', { p_shop_id: s.shopId, p_service_ids: pgArray([s.beard]), p_date: today, p_days: 2, p_barber_id: s.luis })
+    for (const x of slots) expect(new Date(x.starts_at).getUTCMinutes() % 5).toBe(0)
+  })
+
   it('hides unpublished shops from the public', async () => {
     const other = await buildShop()
     await other.owner.q(`update shops set is_published = false where id = $1`, [other.shopId])

@@ -254,27 +254,28 @@ export function Field({ label, hint, error, children, className }: { label?: Rea
   )
 }
 
+const widthCls = (className?: string) => (/(^|\s)(w-|min-w-|flex-1)/.test(className ?? '') ? '' : 'w-full')
 const inputCls =
-  'w-full rounded-xl border border-line bg-surface px-3.5 text-[15px] text-ink placeholder:text-faint transition focus:border-accent focus:outline-none focus:ring-4 focus:ring-accent/15 disabled:opacity-60'
+  'rounded-xl border border-line bg-surface px-3.5 text-[15px] text-ink placeholder:text-faint transition focus:border-accent focus:outline-none focus:ring-4 focus:ring-accent/15 disabled:opacity-60'
 
 export const Input = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLInputElement> & { leading?: ReactNode }>(function Input({ className, leading, ...rest }, ref) {
   if (leading)
     return (
-      <div className="relative">
+      <div className={cx('relative', widthCls(className))}>
         <span className="pointer-events-none absolute inset-y-0 left-3.5 flex items-center text-muted">{leading}</span>
-        <input ref={ref} className={cx(inputCls, 'h-11 pl-9', className)} {...rest} />
+        <input ref={ref} className={cx(inputCls, 'w-full h-11 pl-9', className)} {...rest} />
       </div>
     )
-  return <input ref={ref} className={cx(inputCls, 'h-11', className)} {...rest} />
+  return <input ref={ref} className={cx(inputCls, widthCls(className), 'h-11', className)} {...rest} />
 })
 
 export const Textarea = forwardRef<HTMLTextAreaElement, TextareaHTMLAttributes<HTMLTextAreaElement>>(function Textarea({ className, ...rest }, ref) {
-  return <textarea ref={ref} className={cx(inputCls, 'min-h-[88px] py-2.5', className)} {...rest} />
+  return <textarea ref={ref} className={cx(inputCls, widthCls(className), 'min-h-[88px] py-2.5', className)} {...rest} />
 })
 
 export const Select = forwardRef<HTMLSelectElement, SelectHTMLAttributes<HTMLSelectElement>>(function Select({ className, children, ...rest }, ref) {
   return (
-    <select ref={ref} className={cx(inputCls, 'h-11 appearance-none bg-[length:16px] bg-[right_12px_center] bg-no-repeat pr-9', className)}
+    <select ref={ref} className={cx(inputCls, widthCls(className), 'h-11 appearance-none bg-[length:16px] bg-[right_12px_center] bg-no-repeat pr-9', className)}
       style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%23999' stroke-width='2'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E")` }}
       {...rest}>
       {children}
