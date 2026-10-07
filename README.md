@@ -42,4 +42,5 @@ Schedule `dispatch-notifications` every minute (Supabase scheduled functions, or
 
 ## Docs
 
+- [`docs/SUPABASE_SETUP.md`](docs/SUPABASE_SETUP.md) — step-by-step Supabase project setup (one SQL paste).
 - [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — architecture, schema, roles & permissions, workflows, KPI definitions, security, edge cases, production readiness, roadmap.
