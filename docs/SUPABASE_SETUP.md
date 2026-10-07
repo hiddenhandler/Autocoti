@@ -48,3 +48,15 @@ npx supabase secrets set ANTHROPIC_API_KEY=... RESEND_API_KEY=... EMAIL_FROM="Yo
 Then schedule `dispatch-notifications` to run every minute (Dashboard → **Integrations → Cron**, HTTP request to the function URL with header `Authorization: Bearer <service_role key>`).
 
 Without these, the app works fully; booking confirmations and reminders are queued but not emailed, and the AI assistant answers common questions from your data without Claude.
+
+## 6. Deploy to Vercel
+1. https://vercel.com/new → **Import** the `barberngo` GitHub repository. Vercel reads `vercel.json` (Vite, `npm ci`, `npm run build`, output `dist`, SPA rewrites) — leave the defaults.
+2. **Environment Variables** (Production and Preview):
+   - `VITE_SUPABASE_URL` = `https://<your-project-ref>.supabase.co`
+   - `VITE_SUPABASE_ANON_KEY` = the anon / publishable key
+   - `VITE_APP_URL` = your Vercel URL (e.g. `https://barberngo.vercel.app`) or custom domain
+3. **Deploy**. Every push to `main` redeploys automatically.
+4. Back in Supabase → **Authentication → URL Configuration**: set **Site URL** to the Vercel URL and add `https://<your-vercel-url>/**` (and `https://*-<your-team>.vercel.app/**` for preview deploys) to **Redirect URLs**.
+5. Open the site → **Start Free** → create your account (confirm the email) → create your shop.
+
+`VITE_*` variables are compiled into the build: after changing them in Vercel, redeploy.
