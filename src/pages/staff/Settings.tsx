@@ -16,6 +16,7 @@ const SECTIONS = [
   { key: 'hours', label: 'Business hours' },
   { key: 'booking', label: 'Booking & policies' },
   { key: 'payments', label: 'Payments, tax & tips' },
+  { key: 'rules', label: 'Barbers, rent & queue' },
   { key: 'notifications', label: 'Notifications' },
   { key: 'team', label: 'Team & roles' },
   { key: 'locations', label: 'Locations' },
@@ -38,6 +39,7 @@ export default function Settings() {
           {section === 'hours' && <HoursSection />}
           {section === 'booking' && <BookingSection />}
           {section === 'payments' && <PaymentsSection />}
+          {section === 'rules' && <RulesSection />}
           {section === 'notifications' && <NotificationsSection />}
           {section === 'team' && <TeamSection />}
           {section === 'locations' && <LocationsSection />}
@@ -81,7 +83,7 @@ function ShopSection() {
   useEffect(() => { if (shop) setF(shop) }, [shop])
   if (!shop) return <Skeleton className="h-96" />
   const set = (k: keyof Shop) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => setF({ ...f, [k]: e.target.value })
-  const link = `${window.location.origin}/s/${shop.slug}`
+  const link = `${window.location.origin}/shop/${shop.slug}`
   return (
     <div className="space-y-4">
       <Card className="p-5">
@@ -200,6 +202,8 @@ function BookingSection() {
           <Toggle checked={f.allow_any_barber} onChange={(v) => setF({ ...f, allow_any_barber: v })} label="Allow “Any barber”" />
           <Toggle checked={f.require_phone} onChange={(v) => setF({ ...f, require_phone: v })} label="Require phone number" />
           <Toggle checked={f.require_email} onChange={(v) => setF({ ...f, require_email: v })} label="Require email" />
+          <Toggle checked={f.smart_durations} onChange={(v) => setF({ ...f, smart_durations: v })} label="Smart service times"
+            description="Book each barber with their real average cut time (from the haircut timer, after 5 timed cuts), instead of the default duration. A duration you set per barber always wins." />
           <div className="grid gap-4 sm:grid-cols-2">
             <Field label="Minimum notice" hint="How soon before a slot it can be booked"><Select value={f.min_notice_minutes} onChange={num('min_notice_minutes')}>{[0, 15, 30, 60, 120, 240, 720, 1440].map((m) => <option key={m} value={m}>{m === 0 ? 'None' : m < 60 ? `${m} min` : `${m / 60} h`}</option>)}</Select></Field>
             <Field label="Book up to"><Select value={f.max_advance_days} onChange={num('max_advance_days')}>{[7, 14, 21, 30, 45, 60, 90, 180].map((d) => <option key={d} value={d}>{d} days ahead</option>)}</Select></Field>
@@ -230,6 +234,46 @@ function BookingSection() {
         void updated_at
         return supabase.from('booking_settings').update(rest).eq('shop_id', shop_id)
       }, [['booking_settings', ws.shop_id]])} />
+    </div>
+  )
+}
+
+function RulesSection() {
+  const { ws } = useWorkspace()
+  const { data } = useShopSettings()
+  const [f, setF] = useState<any>(null)
+  const { busy, run } = useSaver()
+  useEffect(() => { if (data) setF(data) }, [data])
+  if (!f) return <Skeleton className="h-64" />
+  return (
+    <div className="space-y-4">
+      <Card>
+        <CardHeader title="Employees" subtitle="Chair owners always control their own schedule, services and prices." />
+        <div className="space-y-4 p-5">
+          <Toggle checked={f.employees_manage_schedule} onChange={(v) => setF({ ...f, employees_manage_schedule: v })} label="Employees edit their own weekly hours" description="Off: only owners/managers change employee schedules. Employees can still block time." />
+          <Toggle checked={f.barbers_can_set_prices} onChange={(v) => setF({ ...f, barbers_can_set_prices: v })} label="Employees set their own prices" />
+          <Field label="Product commission for the seller %" hint="When a barber sells a shop product. Chair owners keep 100% of their own products.">
+            <Input type="number" min={0} max={100} value={f.product_commission_bps / 100} onChange={(e) => setF({ ...f, product_commission_bps: Math.round(Number(e.target.value) * 100) })} />
+          </Field>
+        </div>
+      </Card>
+      <Card>
+        <CardHeader title="Chair rent" subtitle="Rent amounts are set per chair owner (Chairs → tap a chair)." />
+        <div className="p-5">
+          <Field label="Rent is due"><Select value={f.rent_due_days} onChange={(e) => setF({ ...f, rent_due_days: Number(e.target.value) })}>{[0, 1, 2, 3, 5, 7, 10, 15].map((d) => <option key={d} value={d}>{d === 0 ? 'On the first day of the period' : `${d} days into the period`}</option>)}</Select></Field>
+        </div>
+      </Card>
+      <Card>
+        <CardHeader title="Walk-in queue" subtitle="Customers join from your page or QR code and follow their place live." />
+        <div className="space-y-4 p-5">
+          <Toggle checked={f.walk_ins_enabled} onChange={(v) => setF({ ...f, walk_ins_enabled: v })} label="Accept walk-ins online" />
+          <Field label="Tell customers they're almost up when the wait is"><Select value={f.queue_almost_ready_minutes} onChange={(e) => setF({ ...f, queue_almost_ready_minutes: Number(e.target.value) })}>{[5, 8, 10, 15, 20, 30].map((m) => <option key={m} value={m}>{m} min or less</option>)}</Select></Field>
+        </div>
+      </Card>
+      <SaveBar busy={busy} onSave={() => run(() => supabase.from('shop_settings').update({
+        employees_manage_schedule: f.employees_manage_schedule, barbers_can_set_prices: f.barbers_can_set_prices, product_commission_bps: f.product_commission_bps,
+        rent_due_days: f.rent_due_days, walk_ins_enabled: f.walk_ins_enabled, queue_almost_ready_minutes: f.queue_almost_ready_minutes,
+      }).eq('shop_id', ws.shop_id), [['shop_settings', ws.shop_id], ['finance', ws.shop_id], ['live_board', ws.shop_id]])} />
     </div>
   )
 }
@@ -268,6 +312,7 @@ const EVENTS = [
   ['appointment.created', 'Booking confirmation'], ['appointment.reminder', 'Reminder'], ['appointment.rescheduled', 'Rescheduled'],
   ['appointment.cancelled', 'Cancelled'], ['appointment.no_show', 'No-show'], ['waitlist.slot_available', 'Waitlist slot open'],
   ['review.request', 'Review request'], ['rebooking.reminder', 'Rebooking reminder'], ['payment.recorded', 'Receipt'], ['barber.running_late', 'Running late'],
+  ['queue.joined', 'Joined the walk-in queue'], ['queue.almost_ready', 'Queue: almost up'], ['queue.your_turn', 'Queue: your turn'],
 ]
 
 function NotificationsSection() {
@@ -291,8 +336,13 @@ function NotificationsSection() {
   return (
     <div className="space-y-4">
       <Card>
-        <CardHeader title="Automations" subtitle="Email today; SMS, WhatsApp and push plug into the same outbox." />
+        <CardHeader title="Automations" subtitle="Every customer message goes by email and, when there's a phone number, by WhatsApp or SMS." />
         <div className="space-y-4 p-5">
+          <Field label="Text messages" hint="Uses the same message text as the email. Needs the Twilio keys on the server.">
+            <Select value={f.sms_channel} onChange={(e) => setF({ ...f, sms_channel: e.target.value })}>
+              <option value="whatsapp">WhatsApp</option><option value="sms">SMS</option><option value="none">Off — email only</option>
+            </Select>
+          </Field>
           <div>
             <div className="mb-2 text-[13px] font-medium">Appointment reminders</div>
             <div className="flex flex-wrap gap-2">
@@ -315,6 +365,7 @@ function NotificationsSection() {
           <SaveBar busy={busy} onSave={() => run(() => supabase.from('shop_settings').update({
             reminder_offsets_minutes: f.reminder_offsets_minutes, review_requests_enabled: f.review_requests_enabled, review_request_delay_minutes: f.review_request_delay_minutes,
             rebooking_reminders_enabled: f.rebooking_reminders_enabled, notify_staff_on_booking: f.notify_staff_on_booking, default_rebook_weeks: f.default_rebook_weeks, default_visit_cadence_days: f.default_visit_cadence_days,
+            sms_channel: f.sms_channel,
           }).eq('shop_id', ws.shop_id), [['shop_settings', ws.shop_id]])} />
         </div>
       </Card>
@@ -412,7 +463,7 @@ function LocationsSection() {
       <div className="mt-3 divide-y divide-line">
         {mine.map((w) => (
           <div key={w.shop_id} className="flex items-center justify-between px-5 py-3 text-sm">
-            <div><div className="font-medium">{w.shop_name}</div><div className="text-xs text-muted">/s/{w.shop_slug} · {w.timezone}</div></div>
+            <div><div className="font-medium">{w.shop_name}</div><div className="text-xs text-muted">/shop/{w.shop_slug} · {w.timezone}</div></div>
             {w.shop_id === ws.shop_id ? <Badge tone="accent">Current</Badge> : <Button size="sm" variant="secondary" onClick={() => switchTo(w.shop_id)}>Switch</Button>}
           </div>
         ))}

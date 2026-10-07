@@ -1,8 +1,8 @@
 import { useEffect, useState, type ComponentType } from 'react'
 import { Link, NavLink, Navigate, Outlet, useLocation } from 'react-router'
 import {
-  Bell, CalendarCheck, CalendarDays, ChartLine, ChevronsUpDown, Clock, Contact, DoorOpen, Home, Layers, LayoutDashboard,
-  ListOrdered, LogOut, Megaphone, Menu, Monitor, Moon, Search, Settings, ShieldCheck, Sparkles, Sun, Timer, User, Users, Wallet, X,
+  Armchair, BarChart3, Bell, Contact, CalendarDays, ChevronsUpDown, ClipboardList, CreditCard, DoorOpen, Gauge, Home, Landmark, ListOrdered, LogOut,
+  Megaphone, Menu, Monitor, Moon, Package, QrCode, Search, Settings, ShieldCheck, Sparkles, Sun, Tags, Timer, User, Users, Wallet, X, Clock,
 } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
 import { useAuth, useWorkspace, useWorkspaces, WorkspaceProvider } from '@/lib/auth'
@@ -22,46 +22,55 @@ interface NavItem {
   perm?: Permission
   feature?: string
   barber?: boolean // only for people with a chair
+  notPerm?: Permission // hide when the user has this permission
   end?: boolean
 }
 
+// SHOP → CHAIRS → BARBERS → CUSTOMERS → APPOINTMENTS → PAYMENTS → ANALYTICS
 const NAV: { group: string; items: NavItem[] }[] = [
   {
     group: 'Operations',
     items: [
-      { to: '/app/dashboard', label: 'Overview', icon: LayoutDashboard, perm: 'reports.shop' },
+      { to: '/app/dashboard', label: 'Overview', icon: Gauge, perm: 'reports.shop' },
       { to: '/app/today', label: 'Today', icon: Timer, barber: true },
+      { to: '/app/chairs', label: 'Chairs', icon: Armchair },
       { to: '/app/calendar', label: 'Calendar', icon: CalendarDays },
-      { to: '/app/appointments', label: 'Appointments', icon: CalendarCheck, perm: 'calendar.all' },
-      { to: '/app/walk-ins', label: 'Walk-ins', icon: DoorOpen, feature: 'walk_ins' },
+      { to: '/app/appointments', label: 'Appointments', icon: ClipboardList, perm: 'calendar.all' },
+      { to: '/app/walk-ins', label: 'Walk-in queue', icon: DoorOpen, feature: 'walk_ins' },
       { to: '/app/waitlist', label: 'Waitlist', icon: ListOrdered, perm: 'waitlist.manage', feature: 'waitlist' },
     ],
   },
   {
     group: 'People',
     items: [
-      { to: '/app/clients', label: 'Clients', icon: Users },
       { to: '/app/barbers', label: 'Barbers', icon: Contact, perm: 'staff.manage' },
-      { to: '/app/services', label: 'Services', icon: Layers, perm: 'services.manage' },
+      { to: '/app/clients', label: 'Customers', icon: Users },
+      { to: '/app/services', label: 'Services & prices', icon: Tags, perm: 'services.manage' },
     ],
   },
   {
-    group: 'Business',
+    group: 'Money',
     items: [
-      { to: '/app/payments', label: 'Payments', icon: Wallet, perm: 'payments.view' },
-      { to: '/app/earnings', label: 'My earnings', icon: Wallet, barber: true },
-      { to: '/app/reports', label: 'Analytics', icon: ChartLine, perm: 'reports.shop' },
-      { to: '/app/marketing', label: 'Marketing', icon: Megaphone, perm: 'marketing.manage' },
+      { to: '/app/finance', label: 'Finance', icon: Landmark, perm: 'finance.manage' },
+      { to: '/app/finance', label: 'My money', icon: Wallet, barber: true, notPerm: 'finance.manage' },
+      { to: '/app/inventory', label: 'Inventory', icon: Package },
+      { to: '/app/payments', label: 'Payments', icon: CreditCard, perm: 'payments.view' },
     ],
   },
   {
-    group: 'Intelligence',
-    items: [{ to: '/app/insights', label: 'AI Assistant', icon: Sparkles, perm: 'reports.shop' }],
+    group: 'Grow',
+    items: [
+      { to: '/app/reports', label: 'Analytics', icon: BarChart3, perm: 'reports.shop' },
+      { to: '/app/insights', label: 'Insights & AI', icon: Sparkles, perm: 'reports.shop' },
+      { to: '/app/marketing', label: 'Marketing', icon: Megaphone, perm: 'marketing.manage' },
+      { to: '/app/share', label: 'Booking page & QR', icon: QrCode },
+    ],
   },
   {
-    group: 'Shop',
+    group: 'Me & shop',
     items: [
       { to: '/app/schedule', label: 'My schedule', icon: Clock, barber: true },
+      { to: '/app/my-services', label: 'My services', icon: Tags, barber: true },
       { to: '/app/settings', label: 'Settings', icon: Settings, perm: 'shop.settings' },
       { to: '/app/audit', label: 'Audit log', icon: ShieldCheck, perm: 'audit.view' },
     ],
@@ -87,7 +96,7 @@ function useNavItems() {
   const { ws, can, hasFeature } = useWorkspace()
   return NAV.map((g) => ({
     ...g,
-    items: g.items.filter((i) => (!i.perm || can(i.perm)) && (!i.feature || hasFeature(i.feature)) && (!i.barber || !!ws.barber_id)),
+    items: g.items.filter((i) => (!i.perm || can(i.perm)) && (!i.notPerm || !can(i.notPerm)) && (!i.feature || hasFeature(i.feature)) && (!i.barber || !!ws.barber_id)),
   })).filter((g) => g.items.length)
 }
 
@@ -296,21 +305,23 @@ function NotificationsBell() {
 }
 
 function BottomNav({ barber }: { barber: boolean }) {
-  const { can } = useWorkspace()
+  const { can, hasFeature } = useWorkspace()
+  // Barber: Today · Queue · Schedule · Customers · Earnings
+  // Owner:  Overview · Appointments · Chairs · Customers · Finance
   const items: NavItem[] = barber && !can('reports.shop')
     ? [
         { to: '/app/today', label: 'Today', icon: Timer },
-        { to: '/app/calendar', label: 'Calendar', icon: CalendarDays },
-        { to: '/app/clients', label: 'Clients', icon: Users },
-        { to: '/app/earnings', label: 'Earnings', icon: Wallet },
-        { to: '/app/profile', label: 'Profile', icon: User },
+        ...(hasFeature('walk_ins') ? [{ to: '/app/walk-ins', label: 'Queue', icon: DoorOpen }] : []),
+        { to: '/app/calendar', label: 'Schedule', icon: CalendarDays },
+        { to: '/app/clients', label: 'Customers', icon: Users },
+        { to: '/app/finance', label: 'Earnings', icon: Wallet },
       ]
     : [
-        { to: '/app', label: 'Home', icon: Home, end: true },
-        { to: '/app/calendar', label: 'Calendar', icon: CalendarDays },
-        ...(barber ? [{ to: '/app/today', label: 'My chair', icon: Timer }] : [{ to: '/app/walk-ins', label: 'Walk-ins', icon: DoorOpen }]),
-        { to: '/app/clients', label: 'Clients', icon: Users },
-        ...(can('reports.shop') ? [{ to: '/app/reports', label: 'Analytics', icon: ChartLine }] : [{ to: '/app/payments', label: 'Payments', icon: Wallet }]),
+        { to: '/app', label: 'Overview', icon: Home, end: true },
+        { to: '/app/calendar', label: 'Appointments', icon: CalendarDays },
+        { to: '/app/chairs', label: 'Chairs', icon: Armchair },
+        { to: '/app/clients', label: 'Customers', icon: Users },
+        ...(can('finance.manage') ? [{ to: '/app/finance', label: 'Finance', icon: Landmark }] : can('reports.shop') ? [{ to: '/app/reports', label: 'Analytics', icon: BarChart3 }] : [{ to: '/app/payments', label: 'Payments', icon: CreditCard }]),
       ]
   return (
     <nav className="no-print safe-bottom fixed inset-x-0 bottom-0 z-30 border-t border-line bg-surface/92 backdrop-blur-md lg:hidden">

@@ -14,12 +14,31 @@ import { SetupNotice } from '@/components/SetupNotice'
 
 const STEPS = ['Your shop', 'Services', 'Hours', 'Go live']
 
-const DEFAULT_SERVICES = [
-  { name: 'Haircut', price: '30', duration: 45 },
-  { name: 'Haircut + Beard', price: '45', duration: 60 },
-  { name: 'Beard trim', price: '20', duration: 30 },
-  { name: 'Kids cut', price: '25', duration: 30 },
-]
+const CURRENCIES = ['USD', 'DOP', 'MXN', 'COP', 'EUR', 'GBP', 'CAD', 'AUD', 'BRL']
+
+/** Best guess of the shop's currency from its timezone (editable). */
+export function currencyForTimezone(tz: string): string {
+  if (tz === 'America/Santo_Domingo') return 'DOP'
+  if (/^America\/(Mexico_City|Cancun|Monterrey|Merida|Tijuana|Chihuahua|Hermosillo|Mazatlan)/.test(tz)) return 'MXN'
+  if (tz === 'America/Bogota') return 'COP'
+  if (/^America\/(Sao_Paulo|Fortaleza|Recife|Bahia|Manaus|Belem)/.test(tz)) return 'BRL'
+  if (/^America\/(Toronto|Vancouver|Edmonton|Winnipeg|Halifax|Regina|St_Johns)/.test(tz)) return 'CAD'
+  if (tz === 'Europe/London') return 'GBP'
+  if (tz.startsWith('Europe/')) return 'EUR'
+  if (tz.startsWith('Australia/')) return 'AUD'
+  return 'USD'
+}
+
+function defaultServices(currency: string) {
+  const dop = currency === 'DOP'
+  return [
+    { name: 'Fade', price: dop ? '700' : '30', duration: 35 },
+    { name: 'Skin Fade', price: dop ? '800' : '35', duration: 40 },
+    { name: 'Hair + Beard', price: dop ? '1000' : '45', duration: 50 },
+    { name: 'Beard', price: dop ? '400' : '20', duration: 20 },
+    { name: 'Kids cut', price: dop ? '500' : '25', duration: 30 },
+  ]
+}
 
 const DEFAULT_HOURS: HoursRow[] = [2, 3, 4, 5, 6].map((d) => ({ weekday: d, starts_at: '09:00', ends_at: '19:00', kind: 'work' }))
 
@@ -42,11 +61,14 @@ export default function CreateShop() {
   const [slug, setSlug] = useState('')
   const [slugTouched, setSlugTouched] = useState(false)
   const [tz, setTz] = useState(() => Intl.DateTimeFormat().resolvedOptions().timeZone || 'America/New_York')
+  const [currency, setCurrency] = useState(() => currencyForTimezone(Intl.DateTimeFormat().resolvedOptions().timeZone || ''))
+  const [currencyTouched, setCurrencyTouched] = useState(false)
+  const [chairs, setChairs] = useState(3)
   const [ownerCuts, setOwnerCuts] = useState(true)
   const [displayName, setDisplayName] = useState('')
   const [plan, setPlan] = useState('shop')
   // step 2
-  const [services, setServices] = useState(DEFAULT_SERVICES)
+  const [services, setServices] = useState(() => defaultServices('USD'))
   // step 3
   const [hours, setHours] = useState<HoursRow[]>(DEFAULT_HOURS)
   // step 4
@@ -55,6 +77,9 @@ export default function CreateShop() {
   useEffect(() => {
     if (!slugTouched) setSlug(app_slug(name))
   }, [name, slugTouched])
+  useEffect(() => {
+    if (!currencyTouched) setCurrency(currencyForTimezone(tz))
+  }, [tz, currencyTouched])
   useEffect(() => {
     if (user && !displayName) setDisplayName(user.user_metadata?.full_name ?? '')
   }, [user, displayName])
@@ -104,6 +129,13 @@ export default function CreateShop() {
         p_organization_id: orgId,
       })
       setShopId(id)
+      await supabase.from('shop_settings').update({ currency }).eq('shop_id', id)
+      // Chairs: Chair 01 … Chair N; the owner (if they cut) sits in Chair 01.
+      const { data: me } = await supabase.from('barbers').select('id').eq('shop_id', id).eq('user_id', user!.id).maybeSingle()
+      for (let i = 1; i <= chairs; i++) {
+        await rpc('save_chair', { p_shop_id: id, p_chair_id: null, p_label: `Chair ${String(i).padStart(2, '0')}`, p_barber_id: i === 1 ? me?.id ?? null : null })
+      }
+      setServices(defaultServices(currency))
       await qc.invalidateQueries({ queryKey: ['workspaces'] })
       setStep(1)
     })
@@ -184,7 +216,7 @@ export default function CreateShop() {
                 hint={slug.length >= 3 && slugOk ? 'Available ✓' : 'Lowercase letters, numbers and dashes'}
               >
                 <div className="flex items-center rounded-xl border border-line bg-surface focus-within:border-accent">
-                  <span className="pl-3.5 text-[15px] text-muted">{window.location.host}/s/</span>
+                  <span className="pl-3.5 text-[15px] text-muted">{window.location.host}/shop/</span>
                   <input className="h-11 flex-1 bg-transparent pr-3 text-[15px] outline-none" value={slug}
                     onChange={(e) => { setSlugTouched(true); setSlug(app_slug(e.target.value)) }} />
                 </div>
@@ -194,6 +226,18 @@ export default function CreateShop() {
                   {timezones.map((t) => <option key={t}>{t}</option>)}
                 </Select>
               </Field>
+              <div className="grid grid-cols-2 gap-3">
+                <Field label="Currency">
+                  <Select value={currency} onChange={(e) => { setCurrencyTouched(true); setCurrency(e.target.value) }}>
+                    {CURRENCIES.map((c) => <option key={c}>{c}</option>)}
+                  </Select>
+                </Field>
+                <Field label="Chairs">
+                  <Select value={chairs} onChange={(e) => setChairs(Number(e.target.value))}>
+                    {Array.from({ length: 12 }, (_, i) => i + 1).map((n) => <option key={n} value={n}>{n}</option>)}
+                  </Select>
+                </Field>
+              </div>
               <Toggle checked={ownerCuts} onChange={setOwnerCuts} label="I cut hair here too" description="You'll get your own chair, calendar and earnings." />
               {ownerCuts && (
                 <Field label="Your barber name">

@@ -79,4 +79,4 @@ end $$;
 
 insert into public.notification_templates (shop_id, event, channel, subject, body) values
   (null, 'campaign', 'email', '{{subject}}', '{{body}}'),
-  (null, 'staff.invitation', 'email', 'You''re invited to join {{shop_name}} on Autocoti', 'You''ve been invited to join {{shop_name}} as {{role}}. Accept here: {{invite_url}}');
+  (null, 'staff.invitation', 'email', 'You''re invited to join {{shop_name}} on BarberNGo', 'You''ve been invited to join {{shop_name}} as {{role}}. Accept here: {{invite_url}}');

@@ -13,7 +13,7 @@ create table public.barbers (
   specialties text[] not null default '{}',
   photo_url text,
   instagram text,
-  color text not null default '#C8A25C' check (color ~ '^#[0-9A-Fa-f]{6}$'),
+  color text not null default '#1683FF' check (color ~ '^#[0-9A-Fa-f]{6}$'),
   status text not null default 'active' check (status in ('active', 'suspended', 'archived')),
   accepts_online_booking boolean not null default true,
   buffer_minutes int check (buffer_minutes between 0 and 120),   -- NULL = shop default

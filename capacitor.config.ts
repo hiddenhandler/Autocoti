@@ -3,7 +3,7 @@
 //   npm run build && npx cap add ios && npx cap add android && npx cap sync).
 // The app is a static SPA talking to Supabase over HTTPS, so it runs unchanged in the webview.
 const config = {
-  appId: 'com.barberngo.app',
+  appId: 'com.barberngo.com',
   appName: 'BarberNGo',
   webDir: 'dist',
   server: { androidScheme: 'https' },

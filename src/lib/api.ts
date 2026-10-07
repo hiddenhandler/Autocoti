@@ -1,7 +1,7 @@
 import { useEffect } from 'react'
 import { useMutation, useQuery, useQueryClient, type QueryKey } from '@tanstack/react-query'
 import { must, rpc, supabase } from './supabase'
-import type { Analytics, Appointment, Barber, BarberService, Service, Shop } from './types'
+import type { Analytics, Appointment, Barber, BarberService, Expense, FinanceSummary, InventoryMovement, LiveBoard, Operations, Product, RentCharge, Service, ServiceTimeStat, Shop } from './types'
 import { useToast } from '@/components/ui'
 import { friendlyError } from './errors'
 
@@ -81,12 +81,15 @@ export function useRealtimeShop(shopId: string) {
         qc.invalidateQueries({ queryKey: ['walk_ins', shopId] })
         qc.invalidateQueries({ queryKey: ['analytics', shopId] })
         qc.invalidateQueries({ queryKey: ['owner_actions', shopId] })
+        qc.invalidateQueries({ queryKey: ['live_board', shopId] })
       }, 250)
     }
     const ch = supabase
       .channel(`shop:${shopId}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'appointments', filter: `shop_id=eq.${shopId}` }, refresh)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'walk_ins', filter: `shop_id=eq.${shopId}` }, refresh)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'chairs', filter: `shop_id=eq.${shopId}` }, refresh)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'barbers', filter: `shop_id=eq.${shopId}` }, refresh)
       .subscribe()
     return () => {
       clearTimeout(t)
@@ -110,5 +113,81 @@ export function useAction<TArgs, TResult = unknown>(
       opts.onSuccess?.(r, a)
     },
     onError: (e) => toast(friendlyError(e), 'error'),
+  })
+}
+
+/** Every chair + barber with live status. Realtime-invalidated, with a slow poll as a safety net (status also changes with the clock). */
+export function useLiveBoard(shopId: string) {
+  return useQuery({
+    queryKey: ['live_board', shopId],
+    refetchInterval: 30_000,
+    queryFn: () => rpc<LiveBoard>('shop_live_board', { p_shop_id: shopId }),
+  })
+}
+
+export function useOperations(shopId: string, from: string, to: string, barberId?: string | null, enabled = true) {
+  return useQuery({
+    queryKey: ['analytics', shopId, 'ops', from, to, barberId ?? null],
+    enabled,
+    staleTime: 60_000,
+    queryFn: () => rpc<Operations>('shop_operations', { p_shop_id: shopId, p_from: from, p_to: to, p_barber_id: barberId ?? null }),
+  })
+}
+
+export function useServiceTimes(shopId: string, barberId?: string | null, enabled = true) {
+  return useQuery({
+    queryKey: ['analytics', shopId, 'service_times', barberId ?? null],
+    enabled,
+    staleTime: 5 * 60_000,
+    queryFn: () => rpc<ServiceTimeStat[]>('service_time_stats', { p_shop_id: shopId, p_barber_id: barberId ?? null }),
+  })
+}
+
+export function useFinance(shopId: string, from: string, to: string, barberId?: string | null, enabled = true) {
+  return useQuery({
+    queryKey: ['finance', shopId, from, to, barberId ?? null],
+    enabled,
+    queryFn: () => rpc<FinanceSummary>('finance_summary', { p_shop_id: shopId, p_from: from, p_to: to, p_barber_id: barberId ?? null }),
+  })
+}
+
+export function useRentLedger(shopId: string, barberId?: string | null) {
+  return useQuery({
+    queryKey: ['finance', shopId, 'rent', barberId ?? null],
+    queryFn: () => rpc<RentCharge[]>('rent_ledger', { p_shop_id: shopId, p_barber_id: barberId ?? null }),
+  })
+}
+
+export function useExpenses(shopId: string, from: string, to: string, barberId: string | null) {
+  return useQuery({
+    queryKey: ['finance', shopId, 'expenses', from, to, barberId],
+    queryFn: async () => {
+      let q = supabase.from('expenses').select('*').eq('shop_id', shopId).gte('spent_on', from).lte('spent_on', to)
+        .order('spent_on', { ascending: false }).order('created_at', { ascending: false })
+      q = barberId ? q.eq('barber_id', barberId) : q.is('barber_id', null)
+      return must(await q) as Expense[]
+    },
+  })
+}
+
+/** Products in one inventory: the shop's (ownerBarberId = null) or a chair owner's own. */
+export function useProducts(shopId: string, ownerBarberId: string | null, enabled = true) {
+  return useQuery({
+    queryKey: ['products', shopId, ownerBarberId],
+    enabled,
+    queryFn: async () => {
+      let q = supabase.from('products').select('*').eq('shop_id', shopId).is('deleted_at', null).order('name')
+      q = ownerBarberId ? q.eq('owner_barber_id', ownerBarberId) : q.is('owner_barber_id', null)
+      return must(await q) as Product[]
+    },
+  })
+}
+
+export function useMovements(productId: string | null) {
+  return useQuery({
+    queryKey: ['products', 'movements', productId],
+    enabled: !!productId,
+    queryFn: async () =>
+      must(await supabase.from('inventory_movements').select('*').eq('product_id', productId!).order('created_at', { ascending: false }).limit(50)) as InventoryMovement[],
   })
 }

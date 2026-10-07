@@ -3,10 +3,10 @@ import { Link } from 'react-router'
 import { useQueryClient } from '@tanstack/react-query'
 import { ArrowRight, Lightbulb, Send, Sparkles, TrendingDown, TrendingUp, AlertTriangle, Info } from 'lucide-react'
 import { useWorkspace } from '@/lib/auth'
-import { useAnalytics, useBarbers } from '@/lib/api'
+import { useAnalytics, useBarbers, useFinance, useOperations, useProducts, useServiceTimes } from '@/lib/api'
 import { rpc, supabase } from '@/lib/supabase'
 import { addDays, todayInTz } from '@/lib/time'
-import { generateInsights, type InsightKind } from '@/lib/insights'
+import { generateInsights, operationalInsights, type InsightKind } from '@/lib/insights'
 import { composeAnswer, parseQuestion, SUGGESTED_QUESTIONS, type Answer } from '@/lib/assistant'
 import type { Analytics, ClientRow } from '@/lib/types'
 import { Badge, Button, Card, CardHeader, cx, EmptyState, Input, PageHeader, Skeleton, Spinner } from '@/components/ui'
@@ -20,14 +20,21 @@ const KIND: Record<InsightKind, { icon: typeof Lightbulb; tone: string; label: s
 }
 
 export default function Insights() {
-  const { ws } = useWorkspace()
+  const { ws, can } = useWorkspace()
   const today = todayInTz(ws.timezone)
   const { data: a, isLoading } = useAnalytics(ws.shop_id, addDays(today, -29), today)
   const { data: a90 } = useAnalytics(ws.shop_id, addDays(today, -89), today)
+  const { data: serviceTimes } = useServiceTimes(ws.shop_id)
+  const { data: products } = useProducts(ws.shop_id, null)
+  const { data: ops } = useOperations(ws.shop_id, addDays(today, -29), today)
+  const { data: finance } = useFinance(ws.shop_id, addDays(today, -29), today, null, can('finance.manage'))
   const insights = useMemo(() => {
     const seen = new Set<string>()
-    return [...(a ? generateInsights(a) : []), ...(a90 ? generateInsights(a90) : [])].filter((i) => (seen.has(i.id) ? false : (seen.add(i.id), true)))
-  }, [a, a90])
+    return [
+      ...operationalInsights({ serviceTimes, products, ops, finance, currency: a?.period.currency }),
+      ...(a ? generateInsights(a) : []), ...(a90 ? generateInsights(a90) : []),
+    ].filter((i) => (seen.has(i.id) ? false : (seen.add(i.id), true))).sort((x, y) => y.score - x.score)
+  }, [a, a90, serviceTimes, products, ops, finance])
 
   return (
     <div>

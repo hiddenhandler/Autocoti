@@ -1,5 +1,5 @@
 import { NavLink, Navigate, Outlet, useLocation } from 'react-router'
-import { CalendarCheck, CalendarPlus, Home, User } from 'lucide-react'
+import { CalendarCheck, CalendarPlus, Home, Store, User } from 'lucide-react'
 import { useAuth } from '@/lib/auth'
 import { cx, Logo } from '@/components/ui'
 import { PageSpinner } from '@/router'
@@ -8,6 +8,7 @@ import { SetupNotice } from '@/components/SetupNotice'
 
 const ITEMS = [
   { to: '/me', label: 'Home', icon: Home, end: true },
+  { to: '/me/shop', label: 'Shop', icon: Store },
   { to: '/me/book', label: 'Book', icon: CalendarPlus },
   { to: '/me/appointments', label: 'Appointments', icon: CalendarCheck },
   { to: '/me/profile', label: 'Profile', icon: User },
@@ -28,7 +29,7 @@ export default function ClientShell() {
         <Outlet />
       </main>
       <nav className="safe-bottom fixed inset-x-0 bottom-0 z-30 border-t border-line bg-surface/92 backdrop-blur-md">
-        <div className="mx-auto grid max-w-xl grid-cols-4">
+        <div className="mx-auto grid max-w-xl grid-cols-5">
           {ITEMS.map((i) => (
             <NavLink key={i.to} to={i.to} end={i.end}
               className={({ isActive }) => cx('flex flex-col items-center gap-1 pb-2 pt-2.5 text-[10.5px] font-semibold tracking-wide', isActive ? 'text-accent' : 'text-muted')}>

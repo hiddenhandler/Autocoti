@@ -1,9 +1,11 @@
 import { useMemo, useState } from 'react'
 import { Link, Navigate } from 'react-router'
 import { useQuery } from '@tanstack/react-query'
-import { Ban, Clock, DoorOpen, Play, Plus, Square, UserPlus } from 'lucide-react'
+import { Ban, Clock, Coffee, DoorOpen, Play, Plus, Power, ShoppingBag, Square, UserPlus } from 'lucide-react'
 import { useWorkspace, useAuth } from '@/lib/auth'
-import { useAnalytics, useAppointments } from '@/lib/api'
+import { useAnalytics, useAppointments, useLiveBoard, useProducts } from '@/lib/api'
+import { LivePill, liveLines } from '@/components/live'
+import { SellSheet } from './Inventory'
 import { rpc } from '@/lib/supabase'
 import { addDays, todayInTz, zonedToUtc } from '@/lib/time'
 import { fullName, greeting, minutes, money, time } from '@/lib/format'
@@ -43,6 +45,12 @@ function Today({ barberId }: { barberId: string }) {
   const [busy, setBusy] = useState<string | null>(null)
   const [newOpen, setNewOpen] = useState(false)
   const [blockOpen, setBlockOpen] = useState(false)
+  const [selling, setSelling] = useState(false)
+  const { data: board, refetch: refetchBoard } = useLiveBoard(ws.shop_id)
+  const myLive = board?.barbers.find((b) => b.barber_id === barberId)
+  const { data: ownProducts } = useProducts(ws.shop_id, barberId, ws.barber_type === 'chair_owner')
+  const { data: shopProducts } = useProducts(ws.shop_id, null)
+  const retail = [...(ws.barber_type === 'chair_owner' ? ownProducts ?? [] : []), ...(shopProducts ?? [])].filter((p) => p.kind === 'retail' && p.is_active && p.stock_qty > 0)
 
   const list = useMemo(() => (appts ?? []).filter((a) => a.status !== 'NO_SHOW' || true), [appts])
   const clientAppts = list.filter((a) => a.kind === 'appointment')
@@ -75,6 +83,25 @@ function Today({ barberId }: { barberId: string }) {
         </div>
       </div>
 
+      {/* MY STATUS */}
+      <Card className="mb-4 flex flex-wrap items-center gap-3 p-3 pl-4">
+        <div className="min-w-0 flex-1">
+          {myLive ? <LivePill status={myLive.status} /> : <span className="text-sm text-muted">…</span>}
+          {myLive && liveLines(myLive, tz)[0] && <div className="truncate text-xs text-muted">{liveLines(myLive, tz)[0]}</div>}
+        </div>
+        {myLive?.presence !== 'auto' ? (
+          <Button size="sm" loading={busy === 'presence'} icon={<Power className="size-4" />}
+            onClick={() => run('presence', () => rpc('set_my_presence', { p_barber_id: barberId, p_presence: 'auto' }), refetchBoard)}>I'm back</Button>
+        ) : (
+          <>
+            <Button size="sm" variant="secondary" loading={busy === 'break'} icon={<Coffee className="size-4" />}
+              onClick={() => run('break', () => rpc('set_my_presence', { p_barber_id: barberId, p_presence: 'break', p_minutes: 15 }), refetchBoard)}>Break 15</Button>
+            <Button size="sm" variant="ghost" loading={busy === 'off'} icon={<Power className="size-4" />}
+              onClick={() => run('off', () => rpc('set_my_presence', { p_barber_id: barberId, p_presence: 'offline' }), refetchBoard)}>Offline</Button>
+          </>
+        )}
+      </Card>
+
       {/* NOW / NEXT */}
       {isLoading ? (
         <Skeleton className="h-64" />
@@ -84,9 +111,10 @@ function Today({ barberId }: { barberId: string }) {
           <div className="mt-3 text-2xl font-semibold">{fullName(inChair.client)}</div>
           <div className="text-muted">{serviceLabel(inChair)}</div>
           <div className="my-6"><CutTimer startedAt={inChair.actual_started_at!} scheduledMinutes={scheduledMinutes(inChair)} /></div>
+          <div className="-mt-2 mb-5 text-sm text-muted">Target: <b className="text-ink">{scheduledMinutes(inChair)} min</b>{me?.avg_cut_minutes ? ` · your average ${Math.round(me.avg_cut_minutes)} min` : ''}</div>
           <Button size="xl" block icon={<Square className="size-5" />} loading={busy === 'finish'}
             onClick={() => run('finish', () => rpc('finish_cut', { p_appointment_id: inChair.id }), () => setCheckout(inChair))}>
-            FINISH CUT
+            COMPLETE CUT
           </Button>
         </Card>
       ) : next ? (
@@ -145,11 +173,18 @@ function Today({ barberId }: { barberId: string }) {
       )}
 
       {/* Today stats */}
-      <div className="mt-6 grid grid-cols-4 gap-2">
-        <MiniStat label="Cuts" value={me?.cuts ?? 0} />
+      <div className="mt-6 grid grid-cols-3 gap-2">
+        <MiniStat label="Appointments" value={clientAppts.filter((a) => a.status !== 'CANCELLED').length} />
+        <MiniStat label="Completed" value={clientAppts.filter((a) => a.status === 'COMPLETED').length} />
+        <MiniStat label="Remaining" value={upcoming.length + (inChair ? 1 : 0)} />
         <MiniStat label="Revenue" value={money(me?.net_revenue_cents ?? 0, { cents: false })} />
         <MiniStat label="Tips" value={money(me?.tips_cents ?? 0, { cents: false })} />
-        <MiniStat label="Avg cut" value={me?.avg_cut_minutes ? `${Math.round(me.avg_cut_minutes)}m` : '—'} />
+        <MiniStat label="Average cut" value={me?.avg_cut_minutes ? `${Math.round(me.avg_cut_minutes)} min` : '—'} />
+      </div>
+
+      <div className="mt-3 grid grid-cols-2 gap-2">
+        <Button variant="secondary" icon={<ShoppingBag className="size-4" />} disabled={!retail.length} onClick={() => setSelling(true)}>Sell product</Button>
+        <Link to="/app/finance"><Button variant="secondary" block>{ws.barber_type === 'chair_owner' ? 'My business' : 'My earnings'}</Button></Link>
       </div>
 
       {/* Day timeline */}
@@ -195,6 +230,7 @@ function Today({ barberId }: { barberId: string }) {
       {rebook && <RebookSheet appt={rebook} onClose={() => setRebook(null)} />}
       <NewAppointmentSheet open={newOpen} onClose={() => setNewOpen(false)} defaults={{ barberId }} />
       <BlockTimeSheet open={blockOpen} onClose={() => setBlockOpen(false)} defaults={{ barberId }} />
+      {selling && <SellSheet products={retail} scope="mine" onClose={() => setSelling(false)} />}
     </div>
   )
 }

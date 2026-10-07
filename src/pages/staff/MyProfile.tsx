@@ -50,7 +50,7 @@ export function ProfileForm({ barber, title = 'My profile' }: { barber: Barber; 
 
   return (
     <div className="mx-auto max-w-2xl space-y-4">
-      <PageHeader title={title} actions={<a href={`/s/${ws.shop_slug}/barber/${barber.slug}`} target="_blank" rel="noreferrer"><Button variant="secondary" size="sm" icon={<ExternalLink className="size-4" />}>Public profile</Button></a>} />
+      <PageHeader title={title} actions={<a href={`/shop/${ws.shop_slug}/barber/${barber.slug}`} target="_blank" rel="noreferrer"><Button variant="secondary" size="sm" icon={<ExternalLink className="size-4" />}>Public profile</Button></a>} />
       <Card className="p-5">
         <div className="mb-5 flex items-center gap-4">
           <Avatar name={barber.display_name} src={f.photo_url || null} size={72} />

@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router'
 import {
-  ArrowRight, BarChart3, Box, CalendarCheck, CalendarClock, Check, CreditCard, DoorOpen, Gauge, LayoutDashboard, ListOrdered,
-  Play, Receipt, RotateCcw, ShieldCheck, Sparkles, Timer, Users, Wallet, Zap,
+  Armchair, ArrowRight, BarChart3, Box, CalendarCheck, CalendarClock, Check, CreditCard, DoorOpen, Gauge, Landmark, LayoutDashboard, ListOrdered,
+  Play, QrCode, Radio, Receipt, RotateCcw, ShieldCheck, Sparkles, Timer, Wallet, Zap,
 } from 'lucide-react'
 import { Badge, Button, cx, Logo, LogoMark } from '@/components/ui'
 
@@ -10,22 +10,22 @@ import { Badge, Button, cx, Logo, LogoMark } from '@/components/ui'
 // as such — the product itself never shows fabricated data.
 
 const FLOW = [
-  { k: 'BOOK', t: 'Real-time availability', icon: CalendarClock },
-  { k: 'CHECK IN', t: 'Live queue & calendar', icon: Users },
+  { k: 'SCAN', t: 'Your shop’s QR or link', icon: QrCode },
+  { k: 'BOOK', t: 'Book or join the queue', icon: CalendarClock },
   { k: 'SERVE', t: 'Cut timer per chair', icon: Timer },
   { k: 'PAY', t: 'Price, tip, method', icon: Wallet },
   { k: 'REBOOK', t: 'Next visit, one tap', icon: RotateCcw },
-  { k: 'GROW', t: 'Analytics & AI', icon: BarChart3 },
+  { k: 'GROW', t: 'Finance, analytics & AI', icon: BarChart3 },
 ]
 
 type Status = 'live' | 'beta' | 'soon'
 const SUITE: { name: string; d: string; icon: typeof Zap; status: Status }[] = [
-  { name: 'Studio', d: 'Appointments, clients, staff, services, walk-ins and waitlist.', icon: CalendarCheck, status: 'live' },
-  { name: 'Owner', d: 'Revenue, commissions, chair occupancy and barber performance.', icon: LayoutDashboard, status: 'live' },
+  { name: 'Studio', d: 'Appointments, live barber status, walk-in queue, waitlist, clients and services.', icon: CalendarCheck, status: 'live' },
+  { name: 'Owner', d: 'Chairs, chair rent, payouts, expenses, profit and barber performance.', icon: LayoutDashboard, status: 'live' },
   { name: 'POS', d: 'Checkout for services: price, tip, discount, promo codes and receipts.', icon: Receipt, status: 'beta' },
   { name: 'Pay', d: 'Payment tracking across cash, card and transfer — ready for online payments.', icon: CreditCard, status: 'beta' },
   { name: 'AI', d: 'Business assistant, smart insights and scheduling intelligence.', icon: Sparkles, status: 'live' },
-  { name: 'Inventory', d: 'Products, stock levels and retail sales.', icon: Box, status: 'soon' },
+  { name: 'Inventory', d: 'Shop stock and each chair owner’s private stock, low-stock alerts and margins.', icon: Box, status: 'live' },
   { name: 'Fiscal', d: 'Dominican Republic electronic invoicing (e-CF / DGII).', icon: ShieldCheck, status: 'soon' },
 ]
 
@@ -38,15 +38,17 @@ const CONTROL = [
 ]
 
 const FEATURES = [
+  { icon: Radio, t: 'Live barber status', d: 'Available, cutting, on break, queue, offline — driven by the real calendar and the service timer. Customers see who can take them right now.' },
+  { icon: Armchair, t: 'Chairs & chair owners', d: 'Employees on commission or chair owners who keep 100% and pay rent. Each chair owner runs their own schedule, prices and money.' },
+  { icon: Landmark, t: 'Finance', d: 'Money in, money out, profit. Chair rent ledger, payouts, expenses — and a take-home view for every chair owner.' },
   { icon: CalendarClock, t: 'Smart availability', d: 'Slots come from real schedules, breaks, buffers and bookings — and fill the gap right after the last client instead of a rigid grid.' },
   { icon: Play, t: 'Service timer', d: 'Start and finish every service on the chair. Real average service time by barber, service, day and hour.' },
   { icon: Gauge, t: 'Chair occupancy', d: 'Booked vs available time with a weekday × hour heatmap. Know when to add hours — and when you pay for empty chairs.' },
   { icon: Wallet, t: 'Payments & commissions', d: 'Every checkout records price, tip, discount and method. Percentage, fixed, tiered, booth-rental and hybrid commissions calculate themselves.' },
-  { icon: DoorOpen, t: 'Walk-in queue', d: 'Live queue with wait estimates from each barber’s real calendar. One tap seats the next client.' },
+  { icon: DoorOpen, t: 'Walk-in queue', d: 'Customers join from your QR code and see “You are #4 · 20–30 min” live. One tap seats the next client.' },
   { icon: ListOrdered, t: 'Waitlist that refills', d: 'A cancellation instantly offers the slot to matching waitlisted clients. Double booking is impossible at the database level.' },
-  { icon: Users, t: 'Client CRM & retention', d: 'Visit rhythm, notes and preferences per client. Active, at-risk and lost clients surface automatically.' },
   { icon: Sparkles, t: 'AI business assistant', d: '“How much did we make last month?” — answered from your real numbers, never guessed.' },
-  { icon: ShieldCheck, t: 'Built for teams', d: 'Owner, manager, front desk and barber roles enforced in the database. Barbers see their own money — never anyone else’s.' },
+  { icon: ShieldCheck, t: 'Your shop, not a marketplace', d: 'Your own branded page and QR — customers never see other shops. Roles are enforced in the database; barbers see only their own money.' },
 ]
 
 export default function Landing() {
@@ -190,8 +192,8 @@ export default function Landing() {
         <p className="mt-3 text-center text-muted">Every plan starts with a 14-day free trial.</p>
         <div className="mt-12 grid gap-4 md:grid-cols-3">
           {[
-            { n: 'Starter', p: 29, d: 'The independent barber', f: ['1 barber', 'Online booking & calendar', 'Client management', 'Service timer & core analytics'] },
-            { n: 'Shop', p: 79, d: 'Multi-chair shops', f: ['Unlimited barbers', 'Advanced analytics & exports', 'Walk-ins & waitlist', 'Commissions & automations'], hot: true },
+            { n: 'Starter', p: 29, d: 'The independent barber', f: ['1 barber / chair owner', 'Your booking page + QR', 'Customers, timer & live status', 'Inventory, expenses & take-home'] },
+            { n: 'Shop', p: 79, d: 'Multi-chair shops', f: ['Unlimited chairs & barbers', 'Chair owners, rent & payouts', 'Live walk-in queue & waitlist', 'Finance, analytics & exports'], hot: true },
             { n: 'Pro', p: 149, d: 'Growth & multiple locations', f: ['Everything in Shop', 'AI assistant & insights', 'Marketing, gift cards, memberships', 'Multi-location & custom domain'] },
           ].map((p) => (
             <div key={p.n} className={cx('rounded-3xl border p-7', p.hot ? 'border-accent bg-surface shadow-card' : 'border-line')}>

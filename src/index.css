@@ -275,4 +275,10 @@ body {
     background: white;
     color: black;
   }
+  .print-area {
+    border: none !important;
+    box-shadow: none !important;
+    min-height: 95vh;
+    justify-content: center;
+  }
 }

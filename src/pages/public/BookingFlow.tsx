@@ -52,7 +52,7 @@ function Flow({ shop }: { shop: PublicShop }) {
     if (step === 'details') update({ time: null })
     else if (step === 'time') update({ barber: null, time: null, date: null })
     else if (step === 'barber') update({ service: null })
-    else nav(`/s/${shop.slug}`)
+    else nav(`/shop/${shop.slug}`)
   }
 
   if (done) return <Success shop={shop} result={done} serviceName={service?.name ?? ''} />

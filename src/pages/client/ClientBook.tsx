@@ -15,7 +15,7 @@ export default function ClientBook() {
       {shops.length ? (
         <div className="space-y-2">
           {shops.map((s) => (
-            <Link key={s.shop_id} to={`/s/${s.shop_slug}/book`}>
+            <Link key={s.shop_id} to={`/shop/${s.shop_slug}/book`}>
               <Card className="flex items-center gap-3 p-4 transition hover:border-accent">
                 <span className="size-3 rounded-full" style={{ background: s.accent_color }} />
                 <div className="flex-1 font-semibold">{s.shop_name}</div>
@@ -27,7 +27,7 @@ export default function ClientBook() {
       ) : (
         <Card><EmptyState title="Your shops appear here" body="After your first booking, your barbershop shows up here for one-tap booking." /></Card>
       )}
-      <form className="flex gap-2" onSubmit={(e) => { e.preventDefault(); if (slug.trim()) nav(`/s/${slug.trim().toLowerCase()}`) }}>
+      <form className="flex gap-2" onSubmit={(e) => { e.preventDefault(); if (slug.trim()) nav(`/shop/${slug.trim().toLowerCase()}`) }}>
         <Input leading={<Search className="size-4" />} placeholder="Shop link, e.g. fade-factory" value={slug} onChange={(e) => setSlug(e.target.value)} />
         <Button type="submit" variant="secondary">Go</Button>
       </form>

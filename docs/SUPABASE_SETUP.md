@@ -8,9 +8,15 @@
 ## 2. Create the database (one paste)
 1. Dashboard → **SQL Editor** → **New query**.
 2. Open [`supabase/setup.sql`](../supabase/setup.sql) from this repo, copy everything, paste, and click **Run**.
-3. It should finish with "Success. No rows returned". Check **Table Editor**: you'll see ~45 tables (`shops`, `barbers`, `appointments`, …).
+3. It should finish with "Success. No rows returned". Check **Table Editor**: you'll see 51 tables (`shops`, `barbers`, `appointments`, …).
 
-Run it once on a fresh project. (Developers can instead use the CLI: `supabase link --project-ref <ref>` then `supabase db push`.)
+It runs as a single transaction, so if anything fails nothing is created.
+
+**Got an "already exists" error?** An earlier attempt (or an older `setup.sql`) left tables behind. On a project with no real data yet, run [`supabase/reset.sql`](../supabase/reset.sql) in the SQL Editor first (it wipes the BarberNGo schema), then run `setup.sql` again.
+
+**Missing tables / app errors after an older paste?** Older copies of `setup.sql` stopped at migration 15 (no chairs, inventory, finance or live queue). Reset and run the current file.
+
+Tested on the official Supabase Postgres images (15 and 17) as the non-superuser `postgres` role the SQL Editor uses. (Developers can instead use the CLI: `supabase link --project-ref <ref>` then `supabase db push`.)
 
 ## 3. Auth settings
 Dashboard → **Authentication → URL Configuration**:

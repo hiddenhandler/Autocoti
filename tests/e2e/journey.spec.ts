@@ -3,8 +3,9 @@
 //
 //   OWNER creates shop → adds barber → creates service → sets availability → publishes
 //   CLIENT visits public page → picks service & barber → sees real availability → books
-//   BARBER receives appointment → START CUT → FINISH CUT → records price/tip/payment → rebooks
+//   BARBER receives appointment → START CUT → COMPLETE CUT → records price/tip/payment → rebooks
 //   OWNER sees revenue, barber performance, cut duration, utilization, rebooking, clients
+//   OWNER runs chairs, inventory, finance and the QR; a CUSTOMER joins the walk-in queue
 //
 // The only direct database access is test plumbing: moving the shop into a
 // timezone where it is currently daytime (so the run never depends on the
@@ -89,12 +90,12 @@ test('owner adds a barber and a service', async ({ page }) => {
 
   await page.goto('/app/services')
   await page.getByRole('button', { name: 'New service' }).click()
-  await page.getByLabel('Name').fill('Skin Fade')
+  await page.getByLabel('Name').fill('Signature Taper')
   await page.getByLabel('Price').fill('40')
   await page.getByLabel('Duration').selectOption('45')
   await page.getByRole('button', { name: 'Save' }).click()
   await expect(page.getByText('Service created')).toBeVisible()
-  await expect(page.getByRole('button', { name: /Skin Fade/ })).toBeVisible()
+  await expect(page.getByRole('button', { name: /Signature Taper/ })).toBeVisible()
 })
 
 test('barber accepts the invitation and gets a private workspace', async ({ browser }) => {
@@ -117,12 +118,13 @@ test('barber accepts the invitation and gets a private workspace', async ({ brow
 
 test('client books through the public page with real availability', async ({ browser }) => {
   const page = await newPage(browser)
-  await page.goto(`/s/${slug}`)
+  await page.goto(`/shop/${slug}`)
   await expect(page.getByRole('heading', { name: shopName })).toBeVisible()
-  await expect(page.getByRole('heading', { name: 'Available today' })).toBeVisible()
+  await expect(page.getByText('CHOOSE YOUR BARBER')).toBeVisible()
+  await expect(page.getByText('Luis', { exact: true }).first()).toBeVisible()
   await page.getByRole('link', { name: 'BOOK YOUR CUT' }).first().click()
   await expect(page.getByRole('heading', { name: 'Choose a service' })).toBeVisible()
-  await page.getByRole('button', { name: /Skin Fade/ }).click()
+  await page.getByRole('button', { name: /Signature Taper/ }).click()
   await expect(page.getByText("Who's cutting?")).toBeVisible()
   await expect(page.getByRole('button', { name: /First available/ })).toBeVisible()
   await page.getByRole('button', { name: /^Luis/ }).click()
@@ -156,7 +158,7 @@ test('barber runs the cut, records payment and rebooks', async ({ browser }) => 
   await expect(page.getByText('In chair')).toBeVisible()
   // A real cut takes time; the analytics ignore sub-minute accidental timers.
   await page.waitForTimeout(62_000)
-  await page.getByRole('button', { name: 'FINISH CUT' }).click()
+  await page.getByRole('button', { name: 'COMPLETE CUT' }).click()
 
   const sheet = page.getByRole('dialog')
   await expect(sheet.getByText('Complete appointment')).toBeVisible()
@@ -193,12 +195,70 @@ test('owner sees revenue, performance, cut time, utilization, rebooking and the 
   await expect(page.getByRole('heading', { name: 'Average cut time' })).toBeVisible()
   await expect(page.getByText(/1 cuts/)).toBeVisible()
   await expect(page.getByRole('heading', { name: 'Chair utilization' })).toBeVisible()
-  const row = page.locator('tr', { hasText: 'Luis' })
+  const row = page.locator('tr', { hasText: 'Luis' }).first()
   await expect(row).toContainText('$40')
+  await expect(page.getByRole('heading', { name: 'Cut time by barber & service' })).toBeVisible()
 
   await page.goto('/app/clients')
   await page.getByPlaceholder('Name, phone or email').fill('john')
   await page.getByRole('link', { name: /John Client/ }).click()
   await expect(page.getByText('Visit history')).toBeVisible()
-  await expect(page.getByText('Skin Fade').first()).toBeVisible()
+  await expect(page.getByText('Signature Taper').first()).toBeVisible()
+})
+
+test('owner runs chairs, inventory, finance and the QR; a customer joins the walk-in queue', async ({ browser }) => {
+  const page = await newPage(browser)
+  await page.goto('/login')
+  await page.getByLabel('Email').fill(owner.email)
+  await page.getByLabel('Password').fill(owner.password)
+  await page.getByRole('button', { name: 'Sign in' }).click()
+  await expect(page).toHaveURL(/\/app\/dashboard/)
+  await expect(page.getByRole('heading', { name: 'Current shop status' })).toBeVisible()
+
+  // Chairs created at onboarding; the owner sits in Chair 01.
+  await page.goto('/app/chairs')
+  await expect(page.getByText('CHAIR 01')).toBeVisible()
+  await expect(page.getByText('CHAIR 03')).toBeVisible()
+
+  // Inventory: add a product with opening stock, then sell one.
+  await page.goto('/app/inventory')
+  await page.getByRole('button', { name: 'Product', exact: true }).click()
+  const sheet = page.getByRole('dialog')
+  await sheet.getByLabel('Name').fill('Matte Pomade')
+  await sheet.getByLabel('Cost (per unit)').fill('6')
+  await sheet.getByLabel('Sell price').fill('15')
+  await sheet.getByLabel('Starting stock').fill('10')
+  await sheet.getByRole('button', { name: 'Save product' }).click()
+  await expect(page.getByText('Product saved')).toBeVisible()
+  await expect(page.getByText('Matte Pomade')).toBeVisible()
+  await page.getByRole('button', { name: 'Sell', exact: true }).click()
+  await page.getByRole('dialog').getByRole('button', { name: 'More' }).click()
+  await page.getByRole('dialog').getByRole('button', { name: 'Charge $15' }).click()
+  await expect(page.getByText(/Sold · \$15/)).toBeVisible()
+  await expect(page.locator('button', { hasText: 'Matte Pomade' })).toContainText('9')
+
+  // Finance: product sale and the opening stock purchase are on the books.
+  await page.goto('/app/finance')
+  await expect(page.getByText('Money in').first()).toBeVisible()
+  await expect(page.getByText('Product sales')).toBeVisible()
+  await expect(page.getByText('Inventory purchases')).toBeVisible()
+
+  // Booking page & QR
+  await page.goto('/app/share')
+  await expect(page.getByText('BOOK YOUR CUT').first()).toBeVisible()
+  await expect(page.getByRole('img', { name: /QR code/ })).toBeVisible()
+  await page.context().close()
+
+  // A customer scans the QR → live shop page → joins the queue → live ticket.
+  const guest = await newPage(browser)
+  await guest.goto(`/shop/${slug}`)
+  await expect(guest.getByText('WALK-IN')).toBeVisible()
+  await guest.goto(`/shop/${slug}/queue`)
+  await guest.getByLabel('Your name').fill('Pedro Walkin')
+  await guest.getByLabel('Phone').fill('8095550199')
+  await guest.getByRole('button', { name: 'JOIN QUEUE' }).click()
+  await expect(guest).toHaveURL(/\/q\//)
+  await expect(guest.getByText('YOU ARE')).toBeVisible()
+  await expect(guest.getByText('Estimated wait', { exact: true })).toBeVisible()
+  await guest.context().close()
 })

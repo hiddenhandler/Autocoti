@@ -30,6 +30,7 @@ export default function Services() {
                   <div className="flex items-center gap-2 font-semibold">
                     {s.name}
                     {!s.is_active && <Badge>Inactive</Badge>}
+                    {s.owner_barber_id && <Badge tone="accent">Chair owner's</Badge>}
                     {s.is_active && !s.is_public && <Badge tone="warning"><EyeOff className="size-3" /> In-shop only</Badge>}
                   </div>
                   <div className="text-sm text-muted">{minutes(s.duration_minutes)}{s.category ? ` · ${s.category}` : ''} · {n} of {barbers?.length ?? 0} barbers</div>

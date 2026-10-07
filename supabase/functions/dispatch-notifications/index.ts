@@ -4,8 +4,10 @@
 //   2. claim due notifications from the outbox (FOR UPDATE SKIP LOCKED — safe to run concurrently)
 //   3. render the shop's template (or the platform default) and deliver through a channel adapter
 //
-// Env: SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, APP_URL, RESEND_API_KEY (email), EMAIL_FROM.
-// Adding SMS / WhatsApp / push = adding an adapter below; the outbox schema already supports them.
+// Env: SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, APP_URL, RESEND_API_KEY (email), EMAIL_FROM,
+//      TWILIO_ACCOUNT_SID + TWILIO_AUTH_TOKEN, TWILIO_SMS_FROM (SMS), TWILIO_WHATSAPP_FROM (WhatsApp sender, e.g. +14155238886),
+//      SMS_DEFAULT_COUNTRY_CODE (e.g. 1 for US/DR, prepended to 10-digit local numbers).
+// Push = adding an adapter below; the outbox schema already supports it.
 import { createClient } from 'npm:@supabase/supabase-js@2'
 import { json } from '../_shared/http.ts'
 
@@ -41,7 +43,7 @@ const adapters: Partial<Record<Notification['channel'], Adapter>> = {
       method: 'POST',
       headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        from: Deno.env.get('EMAIL_FROM') ?? 'BarberNGo <bookings@barberngo.app>',
+        from: Deno.env.get('EMAIL_FROM') ?? 'BarberNGo <bookings@barberngo.com>',
         to: [n.to_address],
         subject: msg.subject,
         text: msg.text,
@@ -52,7 +54,34 @@ const adapters: Partial<Record<Notification['channel'], Adapter>> = {
     const body = (await res.json()) as { id?: string }
     return { ok: true, ref: body.id }
   },
-  // sms / whatsapp / push: add adapters here (e.g. Twilio, Meta Cloud API, FCM/APNs).
+  sms: (n, msg) => twilio(n, msg.text, Deno.env.get('TWILIO_SMS_FROM'), ''),
+  whatsapp: (n, msg) => twilio(n, msg.text, Deno.env.get('TWILIO_WHATSAPP_FROM'), 'whatsapp:'),
+  // push: add an FCM/APNs adapter here.
+}
+
+/** E.164 from the digits stored on the client (they're normalised to digits, optional leading +). */
+export function toE164(raw: string, defaultCountry = Deno.env.get('SMS_DEFAULT_COUNTRY_CODE') ?? '1'): string | null {
+  const digits = raw.replace(/[^\d+]/g, '')
+  if (digits.startsWith('+')) return digits.length >= 9 ? digits : null
+  if (digits.length === 10) return `+${defaultCountry}${digits}`
+  if (digits.length >= 11) return `+${digits}`
+  return null
+}
+
+async function twilio(n: Notification, body: string, from: string | undefined, prefix: '' | 'whatsapp:') {
+  const sid = Deno.env.get('TWILIO_ACCOUNT_SID')
+  const token = Deno.env.get('TWILIO_AUTH_TOKEN')
+  if (!sid || !token || !from) return { ok: false, skip: true, error: `No ${prefix ? 'WhatsApp' : 'SMS'} provider configured (TWILIO_*)` }
+  const to = n.to_address ? toE164(n.to_address) : null
+  if (!to) return { ok: false, skip: true, error: 'No valid phone number' }
+  const res = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${sid}/Messages.json`, {
+    method: 'POST',
+    headers: { Authorization: `Basic ${btoa(`${sid}:${token}`)}`, 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({ To: `${prefix}${to}`, From: `${prefix}${from}`, Body: body.slice(0, 1500) }),
+  })
+  if (!res.ok) return { ok: false, error: `Twilio ${res.status}: ${await res.text()}` }
+  const out = (await res.json()) as { sid?: string }
+  return { ok: true, ref: out.sid }
 }
 
 Deno.serve(async (req) => {

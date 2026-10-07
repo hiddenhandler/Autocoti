@@ -16,7 +16,7 @@ export default function BarberProfile() {
 
   return (
     <div className="mx-auto min-h-dvh max-w-2xl px-5 pb-32 pt-6">
-      <Link to={`/s/${shop.slug}`} className="inline-flex items-center gap-1.5 text-sm text-muted hover:text-ink"><ArrowLeft className="size-4" /> {shop.name}</Link>
+      <Link to={`/shop/${shop.slug}`} className="inline-flex items-center gap-1.5 text-sm text-muted hover:text-ink"><ArrowLeft className="size-4" /> {shop.name}</Link>
       <div className="mt-8 flex flex-col items-center text-center">
         <Avatar name={barber.name} src={barber.photo_url} size={112} />
         <h1 className="display mt-5 text-5xl">{barber.name}</h1>
@@ -46,7 +46,7 @@ export default function BarberProfile() {
           const s = shop.services.find((x) => x.id === bs.service_id)
           if (!s) return null
           return (
-            <Link key={s.id} to={`/s/${shop.slug}/book?service=${s.id}&barber=${barber.id}`} className="flex items-center justify-between px-5 py-4 hover:bg-surface-2">
+            <Link key={s.id} to={`/shop/${shop.slug}/book?service=${s.id}&barber=${barber.id}`} className="flex items-center justify-between px-5 py-4 hover:bg-surface-2">
               <div>
                 <div className="font-semibold">{s.name}</div>
                 <div className="text-sm text-muted">{minutes(bs.duration_minutes)}</div>
@@ -74,7 +74,7 @@ export default function BarberProfile() {
       <PublicFooter />
       <div className="safe-bottom fixed inset-x-0 bottom-0 border-t border-line bg-surface/92 p-3 backdrop-blur-md">
         <div className="mx-auto max-w-2xl">
-          <Link to={`/s/${shop.slug}/book?barber=${barber.id}`}><Button size="xl" block>BOOK WITH {barber.name.split(' ')[0].toUpperCase()}</Button></Link>
+          <Link to={`/shop/${shop.slug}/book?barber=${barber.id}`}><Button size="xl" block>BOOK WITH {barber.name.split(' ')[0].toUpperCase()}</Button></Link>
         </div>
       </div>
     </div>
