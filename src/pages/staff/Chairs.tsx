@@ -1,7 +1,8 @@
 import { useState } from 'react'
 import { Link } from 'react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Armchair, Plus, Trash2, Users } from 'lucide-react'
+import { Plus, Trash2, Users } from 'lucide-react'
+import { BarberChair3D, BarberChairIcon } from '@/components/BarberChair'
 import { useWorkspace } from '@/lib/auth'
 import { useBarbers, useLiveBoard } from '@/lib/api'
 import { rpc, supabase } from '@/lib/supabase'
@@ -31,7 +32,7 @@ export default function Chairs() {
 
       {isLoading || !board ? <Skeleton className="h-64" /> : board.chairs.length === 0 ? (
         <Card>
-          <EmptyState icon={<Armchair className="size-6" />} title="Set up your chairs"
+          <EmptyState icon={<BarberChairIcon className="size-6" />} title="Set up your chairs"
             body="Add a chair for each station and assign a barber. Employees and chair owners are handled differently for pricing, schedule and money."
             action={manage && <Button onClick={() => setEdit('new')}>Add first chair</Button>} />
         </Card>
@@ -86,16 +87,20 @@ function StatusStrip({ board }: { board: LiveBoard }) {
 function ChairCard({ chair, tz, onClick }: { chair: Chair; tz: string; onClick?: () => void }) {
   const b = chair.barber
   return (
-    <Card as="article" className={cx('p-5 transition', b && LIVE[b.status].ring, onClick && 'cursor-pointer hover:border-accent', !chair.is_active && 'opacity-50')} onClick={onClick}>
-      <div className="flex items-center justify-between">
-        <div className="text-[13px] font-bold tracking-[0.16em] text-muted">{chair.label.toUpperCase()}</div>
-        {b && <Badge tone={b.barber_type === 'chair_owner' ? 'accent' : 'neutral'}>{b.barber_type === 'chair_owner' ? 'Chair owner' : 'Employee'}</Badge>}
-        {!chair.is_active && <Badge>Inactive</Badge>}
+    <Card as="article" className={cx('overflow-hidden transition', b && LIVE[b.status].ring, onClick && 'cursor-pointer hover:-translate-y-0.5 hover:border-accent', !chair.is_active && 'opacity-50')} onClick={onClick}>
+      {/* Stage: the chair itself, lit in the barber's live status colour */}
+      <div className="relative bg-[radial-gradient(120%_90%_at_50%_0%,var(--surface-3),var(--surface-2)_55%,var(--surface))] px-5 pt-4">
+        <div className="flex items-center justify-between">
+          <div className="text-[12px] font-bold tracking-[0.18em] text-muted">{chair.label.toUpperCase()}</div>
+          {b && <Badge tone={b.barber_type === 'chair_owner' ? 'accent' : 'neutral'}>{b.barber_type === 'chair_owner' ? 'Chair owner' : 'Employee'}</Badge>}
+          {!chair.is_active && <Badge>Inactive</Badge>}
+        </div>
+        <BarberChair3D status={b ? b.status : 'EMPTY'} dim={!b} className="mx-auto -mb-1 mt-1 h-32 w-auto" />
+        {b && <Avatar name={b.name} src={b.photo_url} size={40} className="absolute bottom-3 right-4 ring-2 ring-surface" />}
       </div>
-      {b ? (
-        <div className="mt-4 flex items-start gap-3">
-          <Avatar name={b.name} src={b.photo_url} size={44} />
-          <div className="min-w-0 flex-1">
+      <div className="border-t border-line p-5 pt-4">
+        {b ? (
+          <div className="min-w-0">
             <div className="truncate text-lg font-semibold leading-tight">{b.name}</div>
             <LivePill status={b.status} className="mt-1" />
             <div className="mt-1 space-y-0.5 text-[13px] text-muted">
@@ -103,13 +108,13 @@ function ChairCard({ chair, tz, onClick }: { chair: Chair; tz: string; onClick?:
               {liveLines(b, tz).map((l) => <div key={l}>{l}</div>)}
             </div>
           </div>
-        </div>
-      ) : (
-        <div className="mt-4 flex items-center gap-3 text-muted">
-          <span className="flex size-11 items-center justify-center rounded-full border border-dashed border-line-strong"><Armchair className="size-5" /></span>
-          <div><div className="font-semibold text-ink">Available</div><div className="text-[13px]">No barber assigned</div></div>
-        </div>
-      )}
+        ) : (
+          <div>
+            <div className="font-semibold">Open chair</div>
+            <div className="text-[13px] text-muted">No barber assigned{onClick ? ' — tap to assign' : ''}</div>
+          </div>
+        )}
+      </div>
     </Card>
   )
 }

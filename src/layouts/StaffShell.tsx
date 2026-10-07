@@ -1,10 +1,11 @@
 import { useEffect, useState, type ComponentType } from 'react'
 import { Link, NavLink, Navigate, Outlet, useLocation } from 'react-router'
 import {
-  Armchair, BarChart3, Bell, Contact, CalendarDays, ChevronsUpDown, ClipboardList, CreditCard, DoorOpen, Gauge, Home, Landmark, ListOrdered, LogOut,
+  BarChart3, Bell, Contact, CalendarDays, ChevronsUpDown, ClipboardList, CreditCard, DoorOpen, Gauge, Home, Landmark, ListOrdered, LogOut,
   Megaphone, Menu, Monitor, Moon, Package, QrCode, Search, Settings, ShieldCheck, Sparkles, Sun, Tags, Timer, User, Users, Wallet, X, Clock,
 } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
+import { BarberChairIcon } from '@/components/BarberChair'
 import { useAuth, useWorkspace, useWorkspaces, WorkspaceProvider } from '@/lib/auth'
 import { isConfigured, supabase } from '@/lib/supabase'
 import { Avatar, cx, IconButton, KeyHint, Logo } from '@/components/ui'
@@ -33,7 +34,7 @@ const NAV: { group: string; items: NavItem[] }[] = [
     items: [
       { to: '/app/dashboard', label: 'Overview', icon: Gauge, perm: 'reports.shop' },
       { to: '/app/today', label: 'Today', icon: Timer, barber: true },
-      { to: '/app/chairs', label: 'Chairs', icon: Armchair },
+      { to: '/app/chairs', label: 'Chairs', icon: BarberChairIcon },
       { to: '/app/calendar', label: 'Calendar', icon: CalendarDays },
       { to: '/app/appointments', label: 'Appointments', icon: ClipboardList, perm: 'calendar.all' },
       { to: '/app/walk-ins', label: 'Walk-in queue', icon: DoorOpen, feature: 'walk_ins' },
@@ -319,7 +320,7 @@ function BottomNav({ barber }: { barber: boolean }) {
     : [
         { to: '/app', label: 'Overview', icon: Home, end: true },
         { to: '/app/calendar', label: 'Appointments', icon: CalendarDays },
-        { to: '/app/chairs', label: 'Chairs', icon: Armchair },
+        { to: '/app/chairs', label: 'Chairs', icon: BarberChairIcon },
         { to: '/app/clients', label: 'Customers', icon: Users },
         ...(can('finance.manage') ? [{ to: '/app/finance', label: 'Finance', icon: Landmark }] : can('reports.shop') ? [{ to: '/app/reports', label: 'Analytics', icon: BarChart3 }] : [{ to: '/app/payments', label: 'Payments', icon: CreditCard }]),
       ]

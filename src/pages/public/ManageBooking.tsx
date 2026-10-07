@@ -1,10 +1,11 @@
+import { TimeGrid } from '@/components/TimeGrid'
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useParams, useSearchParams } from 'react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { CalendarPlus, Check, CheckCircle2, MapPin, Scissors, Star } from 'lucide-react'
 import { rpc } from '@/lib/supabase'
 import { useAccent, useSlots, useAvailableDays, icsHref } from './shared'
-import { Badge, Button, Card, cx, Skeleton, Spinner, StatusBadge, Textarea } from '@/components/ui'
+import { Badge, Button, Card, cx, Spinner, StatusBadge, Textarea } from '@/components/ui'
 import { money, relativeDay, time, dateStrLabel } from '@/lib/format'
 import { addDays, todayInTz } from '@/lib/time'
 import { friendlyError } from '@/lib/errors'
@@ -225,16 +226,9 @@ function Reschedule({ b, token, onDone, onBack }: { b: Booking; token: string; o
           </button>
         ))}
       </div>
-      <div className="mt-3 grid grid-cols-3 gap-2">
-        {isLoading ? Array.from({ length: 6 }, (_, i) => <Skeleton key={i} className="h-11" />) : (slots ?? []).length === 0 ? (
-          <p className="col-span-3 py-4 text-center text-sm text-muted">No times this day</p>
-        ) : (
-          slots!.map((s) => (
-            <Button key={s.starts_at} variant="outline" loading={busy === s.starts_at} disabled={!!busy} onClick={() => pick(s.starts_at)}>
-              {time(s.starts_at, b.timezone)}
-            </Button>
-          ))
-        )}
+      <div className="mt-4">
+        <TimeGrid slots={slots} loading={isLoading} timezone={b.timezone} onPick={(s) => pick(s.starts_at)} busy={busy} dedupe
+          empty={<p className="py-4 text-center text-sm text-muted">No times this day</p>} />
       </div>
       {error && <p className="mt-3 text-sm text-danger">{error}</p>}
       <Badge className="mt-4">Your current slot is released only when the new one is confirmed</Badge>
