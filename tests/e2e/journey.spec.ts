@@ -129,7 +129,7 @@ test('client books through the public page with real availability', async ({ bro
   await expect(page.getByRole('button', { name: /First available/ })).toBeVisible()
   await page.getByRole('button', { name: /^Luis/ }).click()
   await expect(page.getByRole('heading', { name: 'Pick a time' })).toBeVisible()
-  const firstTime = page.locator('button.h-12').first()
+  const firstTime = page.locator('button[data-slot]').first()
   await expect(firstTime).toBeVisible()
   await firstTime.click()
 
@@ -169,7 +169,7 @@ test('barber runs the cut, records payment and rebooks', async ({ browser }) => 
 
   // Rebooking sheet opens straight after checkout
   await expect(page.getByRole('dialog').getByText('Book the next cut')).toBeVisible()
-  await page.getByRole('dialog').locator('button.h-10').first().click()
+  await page.getByRole('dialog').locator('button[data-slot]').first().click()
   await expect(page.getByText(/Next cut booked/)).toBeVisible()
 
   await page.goto('/app/earnings')

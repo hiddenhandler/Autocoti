@@ -1,3 +1,4 @@
+import { TimeGrid } from '@/components/TimeGrid'
 import { useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { ListOrdered } from 'lucide-react'
@@ -5,7 +6,7 @@ import { useWorkspace } from '@/lib/auth'
 import { useBarbers } from '@/lib/api'
 import { rpc, supabase } from '@/lib/supabase'
 import { todayInTz, zonedToUtc } from '@/lib/time'
-import { ago, relativeDateStr, time } from '@/lib/format'
+import { ago, relativeDateStr } from '@/lib/format'
 import { friendlyError } from '@/lib/errors'
 import type { Slot } from '@/lib/types'
 import { Badge, Button, Card, EmptyState, PageHeader, Sheet, Skeleton, useToast } from '@/components/ui'
@@ -71,9 +72,7 @@ function BookFromWaitlist({ entry, onClose }: { entry: any; onClose: () => void 
   return (
     <Sheet open onClose={onClose} title={`Book ${entry.client.first_name}`}>
       {isLoading ? <Skeleton className="h-24" /> : matching.length === 0 ? <p className="text-sm text-muted">No openings in their window yet.</p> : (
-        <div className="grid grid-cols-2 gap-2">
-          {matching.map((s) => <Button key={s.barber_id + s.starts_at} variant="outline" onClick={() => book(s)}>{time(s.starts_at, ws.timezone)} · {barbers?.find((b) => b.id === s.barber_id)?.display_name}</Button>)}
-        </div>
+        <TimeGrid slots={matching} timezone={ws.timezone} onPick={book} sub={(s) => barbers?.find((b) => b.id === s.barber_id)?.display_name} />
       )}
     </Sheet>
   )

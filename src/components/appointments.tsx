@@ -1,3 +1,4 @@
+import { TimeGrid } from '@/components/TimeGrid'
 import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
@@ -10,7 +11,7 @@ import { clock, dateStrLabel, fullName, minutes, money, parseMoney, relativeDay,
 import { addDays, dateInTz, todayInTz, zonedToUtc } from '@/lib/time'
 import { friendlyError } from '@/lib/errors'
 import {
-  Avatar, Badge, Button, Chip, cx, Field, Input, Segmented, Select, Sheet, Skeleton, StatusBadge, Textarea, useToast,
+  Avatar, Badge, Button, Chip, cx, Field, Input, Segmented, Select, Sheet, StatusBadge, Textarea, useToast,
 } from './ui'
 
 export function useInvalidateCalendar() {
@@ -414,10 +415,9 @@ export function RebookSheet({ appt, onClose }: { appt: Appointment; onClose: () 
         <div className="font-semibold">{dateStrLabel(target, { weekday: 'long', month: 'short', day: 'numeric' })}</div>
         <button className="rounded-lg px-2 py-1 text-sm text-muted hover:bg-surface-2" onClick={() => setDate(addDays(target, 1))}>→</button>
       </div>
-      <div className="mt-3 grid grid-cols-3 gap-2">
-        {isLoading ? Array.from({ length: 6 }, (_, i) => <Skeleton key={i} className="h-11" />) :
-          (slots ?? []).length === 0 ? <p className="col-span-3 py-6 text-center text-sm text-muted">No openings this day — try another.</p> :
-          slots!.map((s) => <Button key={s.starts_at} variant="outline" loading={busy === s.starts_at} disabled={!!busy} onClick={() => book(s)}>{time(s.starts_at, ws.timezone)}</Button>)}
+      <div className="mt-4">
+        <TimeGrid slots={slots} loading={isLoading} timezone={ws.timezone} onPick={book} busy={busy} dense
+          empty={<p className="py-6 text-center text-sm text-muted">No openings this day — try another.</p>} />
       </div>
       <Button variant="ghost" block className="mt-5" onClick={onClose}>Not now</Button>
     </Sheet>
@@ -463,10 +463,7 @@ function MoveSheet({ appt, onClose }: { appt: Appointment; onClose: () => void }
           </Field>
         </div>
         {appt.kind === 'appointment' && (
-          <div className="grid grid-cols-3 gap-2">
-            {isLoading ? <Skeleton className="col-span-3 h-11" /> : (slots ?? []).length === 0 ? <p className="col-span-3 text-center text-sm text-muted">No open slots</p> :
-              slots!.map((s) => <Button key={s.starts_at} variant="outline" onClick={() => move(s.starts_at)}>{time(s.starts_at, ws.timezone)}</Button>)}
-          </div>
+          <TimeGrid slots={slots} loading={isLoading} timezone={ws.timezone} onPick={(s) => move(s.starts_at)} dense />
         )}
         <div className="rounded-xl border border-line p-3">
           <div className="text-[13px] font-medium">Exact time {appt.kind === 'appointment' && <span className="font-normal text-muted">(override — outside normal availability)</span>}</div>
@@ -594,12 +591,10 @@ export function NewAppointmentSheet({ open, onClose, defaults }: { open: boolean
           <Field label="Date"><Input type="date" value={date} onChange={(e) => setDate(e.target.value)} /></Field>
         </div>
         <div>
-          <div className="mb-1.5 text-[13px] font-medium">Open times</div>
-          <div className="grid max-h-44 grid-cols-4 gap-2 overflow-y-auto sm:grid-cols-6">
-            {(slots ?? []).length === 0 && <p className="col-span-full text-sm text-muted">No open times. Use an exact time below to override.</p>}
-            {slots?.map((s) => (
-              <Button key={s.starts_at} size="sm" variant="outline" disabled={busy} onClick={() => submit(s.starts_at, false)}>{time(s.starts_at, ws.timezone)}</Button>
-            ))}
+          <div className="mb-2 text-[13px] font-medium">Open times</div>
+          <div className="max-h-72 overflow-y-auto pr-1">
+            <TimeGrid slots={slots} loading={!slots} timezone={ws.timezone} onPick={(s) => submit(s.starts_at, false)} disabled={busy} dense
+              empty={<p className="text-sm text-muted">No open times. Use an exact time below to override.</p>} />
           </div>
         </div>
         <div className="flex items-end gap-2">

@@ -1,3 +1,4 @@
+import { TimeGrid } from '@/components/TimeGrid'
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router'
 import { useQueryClient } from '@tanstack/react-query'
@@ -7,7 +8,7 @@ import {
 } from './shared'
 import { Avatar, Badge, Button, Card, cx, Field, Input, Skeleton, Spinner, Textarea } from '@/components/ui'
 import { money, minutes, relativeDay, time, dateStrLabel, relativeDateStr } from '@/lib/format'
-import { addDays, dateInTz, todayInTz, zonedParts } from '@/lib/time'
+import { addDays, dateInTz, todayInTz } from '@/lib/time'
 import { rpc } from '@/lib/supabase'
 import { errorCode, friendlyError } from '@/lib/errors'
 import { useAuth } from '@/lib/auth'
@@ -232,11 +233,6 @@ function TimeStep({ shop, serviceId, barberId, date, onDate, onPick }: {
     for (const s of slots ?? []) if (!m.has(s.starts_at)) m.set(s.starts_at, s)
     return [...m.values()].sort((a, b) => a.starts_at.localeCompare(b.starts_at))
   }, [slots])
-  const groups = [
-    { label: 'Morning', items: times.filter((t) => zonedParts(t.starts_at, shop.timezone).hour < 12) },
-    { label: 'Afternoon', items: times.filter((t) => { const h = zonedParts(t.starts_at, shop.timezone).hour; return h >= 12 && h < 17 }) },
-    { label: 'Evening', items: times.filter((t) => zonedParts(t.starts_at, shop.timezone).hour >= 17) },
-  ].filter((g) => g.items.length)
 
   return (
     <div className="animate-rise">
@@ -259,7 +255,7 @@ function TimeStep({ shop, serviceId, barberId, date, onDate, onPick }: {
 
       <div className="mt-6 min-h-[200px]">
         {isLoading || !selected ? (
-          <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">{Array.from({ length: 8 }, (_, i) => <Skeleton key={i} className="h-12" />)}</div>
+          <TimeGrid loading slots={[]} timezone={shop.timezone} onPick={onPick} />
         ) : times.length === 0 ? (
           <Card className="p-6 text-center">
             <div className="font-semibold">Nothing open {relativeDateStr(selected, shop.timezone).toLowerCase()}</div>
@@ -274,19 +270,7 @@ function TimeStep({ shop, serviceId, barberId, date, onDate, onPick }: {
           </Card>
         ) : (
           <div className={cx('space-y-6 transition-opacity', isFetching && 'opacity-70')}>
-            {groups.map((g) => (
-              <div key={g.label}>
-                <div className="eyebrow mb-2.5">{g.label}</div>
-                <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
-                  {g.items.map((s) => (
-                    <button key={s.starts_at} onClick={() => onPick(s)}
-                      className="h-12 rounded-xl border border-line bg-surface text-[15px] font-semibold tnum transition hover:border-accent hover:bg-accent-soft active:scale-95">
-                      {time(s.starts_at, shop.timezone)}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            ))}
+            <TimeGrid slots={times} timezone={shop.timezone} onPick={onPick} dedupe />
             {shop.booking.waitlist_enabled && (
               <button onClick={() => setWaitlist(true)} className="text-sm text-muted underline-offset-4 hover:text-ink hover:underline">Don't see a time that works? Join the waitlist</button>
             )}

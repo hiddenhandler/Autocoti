@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router'
 import {
-  Armchair, ArrowRight, BarChart3, Box, CalendarCheck, CalendarClock, Check, CreditCard, DoorOpen, Gauge, Landmark, LayoutDashboard, ListOrdered,
+  ArrowRight, BarChart3, Box, CalendarCheck, CalendarClock, Check, CreditCard, DoorOpen, Gauge, Landmark, LayoutDashboard, ListOrdered,
   Play, QrCode, Radio, Receipt, RotateCcw, ShieldCheck, Sparkles, Timer, Wallet, Zap,
 } from 'lucide-react'
 import { Badge, Button, cx, Logo, LogoMark } from '@/components/ui'
+import { BarberChairIcon } from '@/components/BarberChair'
 
 // Marketing page. Product previews are illustrative mockups and are labelled
 // as such — the product itself never shows fabricated data.
@@ -39,7 +40,7 @@ const CONTROL = [
 
 const FEATURES = [
   { icon: Radio, t: 'Live barber status', d: 'Available, cutting, on break, queue, offline — driven by the real calendar and the service timer. Customers see who can take them right now.' },
-  { icon: Armchair, t: 'Chairs & chair owners', d: 'Employees on commission or chair owners who keep 100% and pay rent. Each chair owner runs their own schedule, prices and money.' },
+  { icon: BarberChairIcon, t: 'Chairs & chair owners', d: 'Employees on commission or chair owners who keep 100% and pay rent. Each chair owner runs their own schedule, prices and money.' },
   { icon: Landmark, t: 'Finance', d: 'Money in, money out, profit. Chair rent ledger, payouts, expenses — and a take-home view for every chair owner.' },
   { icon: CalendarClock, t: 'Smart availability', d: 'Slots come from real schedules, breaks, buffers and bookings — and fill the gap right after the last client instead of a rigid grid.' },
   { icon: Play, t: 'Service timer', d: 'Start and finish every service on the chair. Real average service time by barber, service, day and hour.' },
