@@ -15,6 +15,7 @@
 
 create table public.platform_admins (
   user_id uuid primary key references auth.users (id) on delete cascade,
+  is_active boolean not null default true,
   created_at timestamptz not null default now()
 );
 
@@ -70,7 +71,7 @@ revoke all on public.platform_admins, public.platform_ledger, public.account_inv
 -- ---------------------------------------------------------------------------
 create or replace function app.is_platform_admin()
 returns boolean language sql stable security definer set search_path = public, pg_temp as $$
-  select auth.uid() is not null and exists (select 1 from public.platform_admins where user_id = auth.uid())
+  select auth.uid() is not null and exists (select 1 from public.platform_admins where user_id = auth.uid() and is_active)
 $$;
 
 create or replace function app.require_platform_admin()
@@ -222,7 +223,7 @@ begin
       left join public.profiles pr on pr.id = u.id
       cross join lateral (
         select array_remove(array[
-          case when exists (select 1 from public.platform_admins a where a.user_id = u.id) then 'system_owner' end,
+          case when exists (select 1 from public.platform_admins a where a.user_id = u.id and a.is_active) then 'system_owner' end,
           case when exists (select 1 from public.organizations o where o.owner_id = u.id and o.deleted_at is null) then 'shop_owner' end,
           case when exists (select 1 from public.barbers b where b.user_id = u.id and b.deleted_at is null and b.barber_type = 'chair_owner') then 'chair_owner' end,
           case when exists (select 1 from public.barbers b where b.user_id = u.id and b.deleted_at is null and b.barber_type = 'employee') then 'barber' end,
@@ -444,12 +445,10 @@ begin
   perform app.require_platform_admin();
   select id into v_user from auth.users where lower(email) = lower(trim(p_email));
   if v_user is null then perform app.fail('NOT_FOUND', 'No account with that email yet'); end if;
-  if p_on then
-    insert into public.platform_admins (user_id) values (v_user) on conflict do nothing;
-  else
-    if v_user = auth.uid() then perform app.fail('FORBIDDEN', 'You cannot remove yourself'); end if;
-    delete from public.platform_admins where user_id = v_user;
-  end if;
+  if not p_on and v_user = auth.uid() then perform app.fail('FORBIDDEN', 'You cannot remove yourself'); end if;
+  -- Access is switched off, never deleted, so the history of who had it stays.
+  insert into public.platform_admins (user_id, is_active) values (v_user, p_on)
+  on conflict (user_id) do update set is_active = excluded.is_active;
 end $$;
 
 revoke execute on function public.admin_overview(int), public.admin_accounts(text), public.admin_people(text, text),
