@@ -1,7 +1,7 @@
 import pg from 'pg'
 import { randomUUID } from 'node:crypto'
 
-export const DB_NAME = process.env.TEST_DB ?? 'autocoti_test'
+export const DB_NAME = process.env.TEST_DB ?? 'barberngo_test'
 export const pool = new pg.Pool({ database: DB_NAME, max: 8, user: process.env.PGUSER ?? 'root', host: process.env.PGHOST ?? '/var/run/postgresql' })
 
 /** Run SQL as superuser (test setup only). */

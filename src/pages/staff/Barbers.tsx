@@ -39,6 +39,7 @@ export default function Barbers() {
                       <div className="truncate font-semibold">{b.display_name}</div>
                       <div className="truncate text-sm text-muted">{b.title ?? 'Barber'}</div>
                     </div>
+                    {b.barber_type === 'chair_owner' && <Badge tone="accent">Chair owner</Badge>}
                     {b.status === 'suspended' ? <Badge tone="danger">Suspended</Badge> : !b.user_id ? <Badge tone="warning">No login</Badge> : !b.accepts_online_booking ? <Badge>Offline</Badge> : null}
                   </div>
                   <div className="mt-5 grid grid-cols-3 gap-2 text-sm">

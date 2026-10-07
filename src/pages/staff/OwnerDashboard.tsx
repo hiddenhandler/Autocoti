@@ -3,7 +3,8 @@ import { Link, Navigate } from 'react-router'
 import { useQuery } from '@tanstack/react-query'
 import { AlertTriangle, ArrowRight, CalendarClock, Check, Circle, Copy, CreditCard, DoorOpen, ListOrdered, Sparkles, UserMinus, Users } from 'lucide-react'
 import { useAuth, useWorkspace } from '@/lib/auth'
-import { useAnalytics, useAppointments, useBarbers, useServices } from '@/lib/api'
+import { useAnalytics, useAppointments, useBarbers, useLiveBoard, useOperations, useServices } from '@/lib/api'
+import { LivePill, liveLines } from '@/components/live'
 import { rpc } from '@/lib/supabase'
 import { addDays, minutesOfDay, todayInTz, zonedToUtc } from '@/lib/time'
 import { delta, fullName, greeting, minutes, money, pct, time } from '@/lib/format'
@@ -22,6 +23,7 @@ export default function OwnerDashboard() {
   const today = todayInTz(tz)
   const { data: t, isLoading } = useAnalytics(ws.shop_id, today, today)
   const { data: m } = useAnalytics(ws.shop_id, addDays(today, -29), today)
+  const { data: ops } = useOperations(ws.shop_id, today, today)
   const { data: actions } = useQuery({ queryKey: ['owner_actions', ws.shop_id], refetchInterval: 60_000, queryFn: () => rpc<Record<string, any>>('owner_actions', { p_shop_id: ws.shop_id }) })
   const insights = useMemo(() => (m ? generateInsights(m).slice(0, 3) : []), [m])
   const firstName = (user?.user_metadata?.full_name ?? '').split(' ')[0]
@@ -42,16 +44,19 @@ export default function OwnerDashboard() {
       <section>
         <div className="eyebrow mb-3">Today</div>
         {isLoading || !t ? <Skeleton className="h-36" /> : (
-          <Card className="grid grid-cols-2 gap-x-6 gap-y-7 p-6 sm:grid-cols-3 lg:grid-cols-6">
+          <Card className="grid grid-cols-2 gap-x-6 gap-y-7 p-6 sm:grid-cols-4 xl:grid-cols-7">
             <Stat big label="Revenue" value={money(t.summary.net_revenue_cents, { cents: false })} sub={t.revenue.tips_cents ? `+ ${money(t.revenue.tips_cents, { cents: false })} tips` : 'service revenue'} />
-            <Stat big label="Bookings" value={t.bookings.total} sub={`${t.bookings.upcoming} still to come`} />
+            <Stat big label="Appointments" value={t.bookings.total} sub={`${t.bookings.upcoming} still to come`} />
+            <Stat big label="Walk-ins" value={ops?.walk_ins ?? '—'} sub={ops?.walk_ins_left ? `${ops.walk_ins_left} left without a cut` : 'from the queue'} />
             <Stat big label="Completed" value={t.bookings.completed} sub={t.bookings.no_shows ? `${t.bookings.no_shows} no-show${t.bookings.no_shows > 1 ? 's' : ''}` : 'no no-shows'} />
-            <Stat big label="Utilization" value={pct(t.utilization.utilization)} sub={`target ${t.utilization.target}%`} />
-            <Stat big label="Avg ticket" value={money(t.summary.avg_ticket_cents, { cents: false })} sub={`${t.summary.tickets} paid`} />
-            <Stat big label="Avg cut" value={t.cut_time.avg_actual_minutes ? minutes(t.cut_time.avg_actual_minutes) : '—'} sub={t.cut_time.count ? `${t.cut_time.count} timed` : 'no timed cuts yet'} />
+            <Stat big label="Average ticket" value={money(t.summary.avg_ticket_cents, { cents: false })} sub={`${t.summary.tickets} paid`} />
+            <Stat big label="Average wait" value={ops?.avg_wait_minutes !== null && ops?.avg_wait_minutes !== undefined ? `${Math.round(ops.avg_wait_minutes)} min` : '—'} sub="booked + walk-in" />
+            <Stat big label="On-time" value={pct(ops?.on_time_pct)} sub={t.cut_time.avg_actual_minutes ? `avg cut ${minutes(t.cut_time.avg_actual_minutes)}` : 'started within 5 min'} />
           </Card>
         )}
       </section>
+
+      <ShopStatus />
 
       <div className="mt-8 grid gap-6 xl:grid-cols-[1fr_380px]">
         <div className="min-w-0 space-y-6">
@@ -81,6 +86,39 @@ export default function OwnerDashboard() {
         </div>
       </div>
     </div>
+  )
+}
+
+/** CURRENT SHOP STATUS — live, per chair. */
+function ShopStatus() {
+  const { ws } = useWorkspace()
+  const { data: board } = useLiveBoard(ws.shop_id)
+  if (!board) return <Skeleton className="mt-6 h-40" />
+  const people = board.chairs.length ? board.chairs.filter((c) => c.barber).map((c) => ({ chair: c.label, b: c.barber! })) : board.barbers.map((b) => ({ chair: null, b }))
+  return (
+    <section className="mt-6">
+      <Card>
+        <CardHeader title="Current shop status" subtitle={`${board.counts.working} barbers working · ${board.counts.available} available · ${board.counts.cutting} cutting · ${board.counts.on_break} on break`}
+          action={<Link to="/app/chairs" className="text-sm text-muted hover:text-ink">Chairs</Link>} />
+        <div className="grid gap-px p-5 pt-4 sm:grid-cols-2 lg:grid-cols-4">
+          {people.map(({ chair, b }) => (
+            <div key={b.barber_id} className="flex items-start gap-3 rounded-xl p-2">
+              <Avatar name={b.name} src={b.photo_url} size={36} />
+              <div className="min-w-0">
+                <div className="truncate text-sm font-semibold">{b.name}{chair && <span className="font-normal text-muted"> · {chair}</span>}</div>
+                <LivePill status={b.status} size="sm" />
+                {liveLines(b, ws.timezone)[0] && <div className="truncate text-xs text-muted">{liveLines(b, ws.timezone)[0]}</div>}
+              </div>
+            </div>
+          ))}
+          {people.length === 0 && <p className="text-sm text-muted">No barbers yet.</p>}
+        </div>
+        <div className="flex items-center justify-between border-t border-line px-5 py-3 text-sm">
+          <span>Current queue: <b>{board.walk_ins.waiting}</b> customer{board.walk_ins.waiting === 1 ? '' : 's'}{board.walk_ins.estimated_wait_minutes ? ` · ~${board.walk_ins.estimated_wait_minutes} min wait` : ''}</span>
+          <Link to="/app/walk-ins" className="text-muted hover:text-ink">Queue →</Link>
+        </div>
+      </Card>
+    </section>
   )
 }
 
@@ -244,7 +282,7 @@ function SetupChecklist() {
     { done: ws.is_published, label: 'Publish your booking page', to: '/app/settings/shop' },
   ]
   if (steps.every((s) => s.done)) return null
-  const link = `${window.location.origin}/s/${ws.shop_slug}`
+  const link = `${window.location.origin}/shop/${ws.shop_slug}`
   return (
     <Card className="mb-8 p-5">
       <div className="flex flex-wrap items-center justify-between gap-3">

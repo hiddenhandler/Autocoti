@@ -1,5 +1,5 @@
 import { lazy, Suspense, type ComponentType } from 'react'
-import { createBrowserRouter, Navigate, Outlet, useRouteError } from 'react-router'
+import { createBrowserRouter, Navigate, Outlet, useLocation, useRouteError } from 'react-router'
 import { Button, EmptyState, Spinner } from './components/ui'
 
 function load(factory: () => Promise<{ default: ComponentType }>) {
@@ -17,6 +17,12 @@ export function PageSpinner() {
       <Spinner />
     </div>
   )
+}
+
+/** Old short links (/s/:slug/...) keep working. */
+function LegacyShopRedirect() {
+  const loc = useLocation()
+  return <Navigate to={loc.pathname.replace(/^\/s\//, '/shop/') + loc.search} replace />
 }
 
 function RouteError() {
@@ -44,10 +50,13 @@ export const router = createBrowserRouter([
       { path: '/invite/:token', element: load(() => import('./pages/auth/AcceptInvite')) },
       { path: '/onboarding', element: load(() => import('./pages/onboarding/CreateShop')) },
 
-      // Public booking
-      { path: '/s/:slug', element: load(() => import('./pages/public/ShopPage')) },
-      { path: '/s/:slug/book', element: load(() => import('./pages/public/BookingFlow')) },
-      { path: '/s/:slug/barber/:barberSlug', element: load(() => import('./pages/public/BarberProfile')) },
+      // Public: every shop's own branded page (never a marketplace)
+      { path: '/shop/:slug', element: load(() => import('./pages/public/ShopPage')) },
+      { path: '/shop/:slug/book', element: load(() => import('./pages/public/BookingFlow')) },
+      { path: '/shop/:slug/queue', element: load(() => import('./pages/public/JoinQueue')) },
+      { path: '/shop/:slug/barber/:barberSlug', element: load(() => import('./pages/public/BarberProfile')) },
+      { path: '/s/*', element: <LegacyShopRedirect /> },
+      { path: '/q/:token', element: load(() => import('./pages/public/QueueTicket')) },
       { path: '/a/:token', element: load(() => import('./pages/public/ManageBooking')) },
       { path: '/r/:token', element: load(() => import('./pages/public/Review')) },
       { path: '/w/:token', element: load(() => import('./pages/public/WaitlistClaim')) },
@@ -58,6 +67,7 @@ export const router = createBrowserRouter([
         element: load(() => import('./layouts/ClientShell')),
         children: [
           { index: true, element: load(() => import('./pages/client/ClientHome')) },
+          { path: 'shop', element: load(() => import('./pages/client/ClientShop')) },
           { path: 'book', element: load(() => import('./pages/client/ClientBook')) },
           { path: 'appointments', element: load(() => import('./pages/client/ClientAppointments')) },
           { path: 'profile', element: load(() => import('./pages/client/ClientProfile')) },
@@ -93,6 +103,11 @@ export const router = createBrowserRouter([
           { path: 'schedule', element: load(() => import('./pages/staff/MySchedule')) },
           { path: 'profile', element: load(() => import('./pages/staff/MyProfile')) },
           { path: 'notifications', element: load(() => import('./pages/staff/Notifications')) },
+          { path: 'chairs', element: load(() => import('./pages/staff/Chairs')) },
+          { path: 'inventory', element: load(() => import('./pages/staff/Inventory')) },
+          { path: 'finance', element: load(() => import('./pages/staff/Finance')) },
+          { path: 'share', element: load(() => import('./pages/staff/SharePage')) },
+          { path: 'my-services', element: load(() => import('./pages/staff/MyServices')) },
         ],
       },
       { path: '*', element: <RouteError /> },

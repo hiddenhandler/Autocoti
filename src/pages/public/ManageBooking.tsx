@@ -1,13 +1,15 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useParams, useSearchParams } from 'react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { CalendarPlus, Check, MapPin, Star } from 'lucide-react'
+import { CalendarPlus, Check, CheckCircle2, MapPin, Scissors, Star } from 'lucide-react'
 import { rpc } from '@/lib/supabase'
 import { useAccent, useSlots, useAvailableDays, icsHref } from './shared'
 import { Badge, Button, Card, cx, Skeleton, Spinner, StatusBadge, Textarea } from '@/components/ui'
 import { money, relativeDay, time, dateStrLabel } from '@/lib/format'
 import { addDays, todayInTz } from '@/lib/time'
 import { friendlyError } from '@/lib/errors'
+import { Elapsed, LivePill, liveLines } from '@/components/live'
+import type { BarberLive } from '@/lib/types'
 
 interface Booking {
   id: string
@@ -34,7 +36,16 @@ interface Booking {
   late_cancel_fee_cents: number
   cancellation_policy_text: string | null
   review_token: string | null
+  duration_minutes: number
+  actual_started_at: string | null
+  actual_finished_at: string | null
+  estimated_finish: string | null
+  barber_photo_url: string | null
+  barber_live: BarberLive | null
+  rebook_weeks: number | null
 }
+
+const LIVE_STATES = ['BOOKED', 'CONFIRMED', 'CHECKED_IN', 'IN_SERVICE']
 
 export default function ManageBooking() {
   const { token } = useParams()
@@ -46,6 +57,13 @@ export default function ManageBooking() {
   const [currentToken, setCurrentToken] = useState(token)
   const { data: b, isLoading } = useQuery({
     queryKey: ['booking', currentToken],
+    // Live while it matters: confirmed → cut in progress → completed.
+    refetchInterval: (q) => {
+      const d = q.state.data as Booking | null | undefined
+      if (!d || !LIVE_STATES.includes(d.status)) return false
+      return new Date(d.starts_at).getTime() - Date.now() < 3 * 3600e3 ? 15_000 : 120_000
+    },
+    refetchOnWindowFocus: true,
     queryFn: () => rpc<Booking | null>('get_booking', { p_token: currentToken }),
   })
   useAccent(b?.accent_color)
@@ -82,7 +100,8 @@ export default function ManageBooking() {
       <div className="eyebrow">{b.shop_name}</div>
       <h1 className="display mt-2 text-5xl">Your appointment</h1>
       {msg && <p className="animate-rise mt-5 flex items-center gap-2 rounded-xl bg-accent-soft px-4 py-3 text-sm"><Check className="size-4 text-accent" />{msg}</p>}
-      <Card className="mt-6 p-6">
+      <LiveState b={b} />
+      <Card className="mt-4 p-6">
         <div className="flex items-start justify-between gap-3">
           <div>
             <div className="text-xl font-semibold">{b.service_name}</div>
@@ -119,9 +138,14 @@ export default function ManageBooking() {
           {b.can_reschedule && <Button variant="secondary" size="lg" block onClick={() => setMode('reschedule')}>Reschedule</Button>}
           {b.can_cancel && <Button variant="ghost" size="lg" block onClick={() => setMode('cancel')}>Cancel appointment</Button>}
           {['COMPLETED', 'CANCELLED', 'NO_SHOW'].includes(b.status) && (
-            <Link to={`/s/${b.shop_slug}/book?service=${b.service_ids?.[0] ?? ''}&barber=${b.barber_id}&rebook=${b.id}`}>
-              <Button size="lg" block>Book again with {b.barber_name}</Button>
-            </Link>
+            <>
+              {b.status === 'COMPLETED' && b.rebook_weeks && (
+                <p className="mb-1 text-center text-sm text-muted">Your next cut is usually due in about <b className="text-ink">{b.rebook_weeks} week{b.rebook_weeks === 1 ? '' : 's'}</b>.</p>
+              )}
+              <Link to={`/shop/${b.shop_slug}/book?service=${b.service_ids?.[0] ?? ''}&barber=${b.barber_id}&rebook=${b.id}`}>
+                <Button size="lg" block>BOOK AGAIN WITH {b.barber_name.split(' ')[0].toUpperCase()}</Button>
+              </Link>
+            </>
           )}
           {!b.can_cancel && ['BOOKED', 'CONFIRMED'].includes(b.status) && b.shop_phone && (
             <p className="text-center text-sm text-muted">Need to change it? Call <a className="font-semibold text-ink" href={`tel:${b.shop_phone}`}>{b.shop_phone}</a></p>
@@ -214,6 +238,55 @@ function Reschedule({ b, token, onDone, onBack }: { b: Booking; token: string; o
       </div>
       {error && <p className="mt-3 text-sm text-danger">{error}</p>}
       <Badge className="mt-4">Your current slot is released only when the new one is confirmed</Badge>
+    </Card>
+  )
+}
+
+/** Big live status block: CONFIRMED · CUT IN PROGRESS (ticking) · COMPLETED. */
+function LiveState({ b }: { b: Booking }) {
+  const tz = b.timezone
+  if (b.status === 'IN_SERVICE' && b.actual_started_at) {
+    return (
+      <Card className="animate-rise mt-6 border-success/40 p-6 text-center">
+        <span className="mx-auto flex size-12 items-center justify-center rounded-full bg-success/15 text-success"><Scissors className="size-6" /></span>
+        <div className="mt-3 text-sm font-bold tracking-[0.16em] text-success">✂️ CUT IN PROGRESS</div>
+        <div className="mt-3 text-5xl font-bold"><Elapsed startedAt={b.actual_started_at} /></div>
+        <div className="mt-3 grid grid-cols-2 gap-3 text-sm">
+          <div><div className="text-muted">Started</div><div className="font-semibold">{time(b.actual_started_at, tz)}</div></div>
+          <div><div className="text-muted">Estimated completion</div><div className="font-semibold">{b.estimated_finish ? time(b.estimated_finish, tz) : '—'}</div></div>
+        </div>
+      </Card>
+    )
+  }
+  if (b.status === 'COMPLETED') {
+    return (
+      <Card className="animate-rise mt-6 p-6 text-center">
+        <CheckCircle2 className="mx-auto size-10 text-success" />
+        <div className="mt-2 text-sm font-bold tracking-[0.16em] text-success">✅ COMPLETED</div>
+        {b.actual_started_at && b.actual_finished_at && (
+          <div className="mt-1 text-sm text-muted">{Math.round((new Date(b.actual_finished_at).getTime() - new Date(b.actual_started_at).getTime()) / 60000)} min with {b.barber_name}</div>
+        )}
+      </Card>
+    )
+  }
+  if (!['BOOKED', 'CONFIRMED', 'CHECKED_IN'].includes(b.status)) return null
+  const bl = b.barber_live
+  const label = b.status === 'CHECKED_IN' ? '🟢 CHECKED IN' : b.status === 'CONFIRMED' ? '🟢 CONFIRMED' : '🟢 BOOKED'
+  return (
+    <Card className="mt-6 p-5">
+      <div className="flex items-center justify-between">
+        <div className="text-sm font-bold tracking-[0.16em] text-success">{label}</div>
+        <div className="text-sm text-muted">{b.duration_minutes} min</div>
+      </div>
+      {bl && (
+        <div className="mt-3 rounded-xl bg-surface-2 px-4 py-3 text-sm">
+          <div className="flex items-center justify-between gap-2"><span className="font-semibold">{b.barber_name} right now</span><LivePill status={bl.status} size="sm" /></div>
+          {liveLines(bl, tz).map((l) => <div key={l} className="mt-0.5 text-muted">{l}</div>)}
+          {bl.status === 'CUTTING' && bl.until && new Date(bl.until) > new Date(b.starts_at) && (
+            <div className="mt-1 font-medium text-warning">Running about {Math.round((new Date(bl.until).getTime() - new Date(b.starts_at).getTime()) / 60000)} min behind</div>
+          )}
+        </div>
+      )}
     </Card>
   )
 }

@@ -1,6 +1,17 @@
 // Map stable server error codes (raised by app.fail) to human messages.
 const MESSAGES: Record<string, string> = {
   SLOT_TAKEN: 'That time was just taken. Please pick another one.',
+  CHAIR_LABEL_TAKEN: 'A chair with that name already exists.',
+  RENT_REQUIRED: 'Set the chair rent for this chair owner.',
+  OUT_OF_STOCK: 'Not enough stock for that.',
+  PRODUCT_NOT_FOUND: 'That product is no longer available.',
+  PRODUCT_NOT_YOURS: "That product belongs to another chair owner's inventory.",
+  INVALID_QUANTITY: 'Check the quantity.',
+  SKU_TAKEN: 'Another product already uses that SKU.',
+  QUEUE_CLOSED: 'The walk-in queue is closed right now.',
+  QUEUE_FULL: 'The queue is full right now. Please book a time instead.',
+  NO_CAPACITY_TODAY: 'No barber can take walk-ins for that service today. Please book a time instead.',
+  NAME_REQUIRED: 'Please add your name.',
   NOT_AUTHENTICATED: 'Please sign in to continue.',
   FORBIDDEN: "You don't have permission to do that.",
   SHOP_NOT_AVAILABLE: 'This shop is not taking online bookings right now.',

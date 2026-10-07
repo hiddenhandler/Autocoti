@@ -3,7 +3,8 @@ import { addDays, dateInTz, startOfWeek, weekdayOf, zonedParts, zonedToUtc, rang
 import { parseMoney, money } from './format'
 import { toCsv } from './csv'
 import { composeAnswer, parsePeriod, parseQuestion } from './assistant'
-import { generateInsights, hourRanges } from './insights'
+import { generateInsights, hourRanges, operationalInsights } from './insights'
+import type { Product, ServiceTimeStat } from './types'
 import type { Analytics, CoreMetrics } from './types'
 
 describe('time', () => {
@@ -139,5 +140,31 @@ describe('insights', () => {
     const titles = out.map((i) => i.title)
     expect(titles.some((t) => t.startsWith('Saturday 2 PM–5 PM is consistently at 96%+'))).toBe(true)
     expect(titles.some((t) => t.includes('Cuts take 38 min on average, but you book 45-minute slots'))).toBe(true)
+  })
+})
+
+describe('operational insights', () => {
+  const stat = (o: Partial<ServiceTimeStat>): ServiceTimeStat => ({
+    barber_id: 'k', barber_name: 'Kevin Diaz', service_id: 's', service_name: 'Skin Fade', default_minutes: 35, booked_minutes: 45,
+    learned_minutes: 45, avg_30d: 43, avg_prev_30d: 35, samples_30d: 12, samples_total: 25, ...o,
+  })
+  it('flags a barber whose cut time drifted, only with enough samples on both sides', () => {
+    const [i] = operationalInsights({ serviceTimes: [stat({})] })
+    expect(i.title).toBe("Kevin's average Skin Fade time increased 8 minutes this month")
+    expect(i.recommendation).toContain('45 min')
+    expect(operationalInsights({ serviceTimes: [stat({ samples_30d: 3 })] })).toEqual([])
+    expect(operationalInsights({ serviceTimes: [stat({ samples_total: 14 })] })).toEqual([]) // only 2 cuts in the earlier window
+    expect(operationalInsights({ serviceTimes: [stat({ avg_30d: 37 })] })).toEqual([]) // 2 min is noise
+    expect(operationalInsights({ serviceTimes: [stat({ avg_30d: 29 })] })[0].kind).toBe('win')
+  })
+  it('lists low-stock products and walk-in walkouts', () => {
+    const p = (name: string, stock_qty: number) => ({ name, stock_qty, low_stock_at: 2, is_active: true }) as Product
+    const out = operationalInsights({
+      products: [p('Pomade', 1), p('Oil', 9)],
+      ops: { walk_ins: 10, walk_ins_left: 3, walk_ins_served: 7, avg_wait_minutes: 34, on_time_pct: 90, timed_cuts: 1, product_sales_cents: 0, products_sold: 0 },
+    })
+    expect(out.map((i) => i.id)).toEqual(['low-stock', 'walkouts'])
+    expect(out[0].detail).toBe('Pomade (1 left)')
+    expect(out[1].detail).toBe('Average wait was 34 min.')
   })
 })

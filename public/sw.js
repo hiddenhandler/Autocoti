@@ -1,6 +1,6 @@
-// Autocoti service worker: app-shell caching for fast loads and offline resilience.
+// BarberNGo service worker: app-shell caching for fast loads and offline resilience.
 // API calls (Supabase) are never cached — data must always be live.
-const CACHE = 'autocoti-shell-v1'
+const CACHE = 'barberngo-shell-v2'
 const SHELL = ['/', '/index.html', '/manifest.webmanifest', '/icons/icon.svg']
 
 self.addEventListener('install', (e) => {

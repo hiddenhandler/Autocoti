@@ -35,6 +35,11 @@ export type Permission =
   | 'billing'
   | 'notifications.view'
   | '*private_notes'
+  | 'inventory.manage'
+  | 'inventory.sell'
+  | 'finance.manage'
+
+export type BarberType = 'employee' | 'chair_owner'
 
 export interface Workspace {
   shop_id: string
@@ -43,6 +48,7 @@ export interface Workspace {
   organization_id: string
   role: StaffRole
   barber_id: string | null
+  barber_type: BarberType | null
   timezone: string
   accent_color: string
   is_published: boolean
@@ -96,6 +102,9 @@ export interface Barber {
   same_day_booking: boolean
   sort_order: number
   deleted_at: string | null
+  barber_type: BarberType
+  presence: 'auto' | 'break' | 'offline'
+  presence_until: string | null
 }
 
 export interface Service {
@@ -110,6 +119,7 @@ export interface Service {
   is_public: boolean
   sort_order: number
   deleted_at: string | null
+  owner_barber_id: string | null
 }
 
 export interface BarberService {
@@ -404,4 +414,195 @@ export interface ClientRow {
   favorite_barber_id: string | null
   created_at: string
   total_count: number
+}
+
+// ---------------------------------------------------------------------------
+// Live status, chairs, queue
+// ---------------------------------------------------------------------------
+export type LiveStatus = 'AVAILABLE' | 'CUTTING' | 'BOOKED' | 'BREAK' | 'QUEUE' | 'OFFLINE' | 'NOT_WORKING'
+
+export interface BarberLive {
+  barber_id: string
+  status: LiveStatus
+  until: string | null
+  note: 'offline' | 'done' | 'starts' | null
+  presence: 'auto' | 'break' | 'offline'
+  current: { started_at: string | null; estimated_finish: string; service: string | null; target_minutes: number } | null
+  queue_count: number
+  estimated_wait_minutes: number
+  avg_cut_minutes: number | null
+  next_available: string | null
+  works_today: boolean
+  day_starts: string | null
+  day_ends: string | null
+}
+
+export interface WalkInSummary {
+  enabled: boolean
+  waiting: number
+  avg_service_minutes: number
+  barbers_working: number
+  estimated_wait_minutes: number | null
+}
+
+export interface ShopLive {
+  now: string
+  open_now: boolean
+  barbers: (BarberLive & { name: string; slug: string; title: string | null; photo_url: string | null; color: string; chair: string | null })[]
+  walk_ins: WalkInSummary
+}
+
+export interface LiveBoardBarber extends BarberLive {
+  name: string
+  photo_url: string | null
+  color: string
+  barber_type: BarberType
+  chair_id: string | null
+}
+
+export interface LiveBoard {
+  now: string
+  open_now: boolean
+  chairs: { id: string; label: string; position: number; is_active: boolean; notes: string | null; barber_id: string | null; barber: LiveBoardBarber | null }[]
+  barbers: LiveBoardBarber[]
+  counts: { working: number; available: number; cutting: number; on_break: number; off: number }
+  walk_ins: WalkInSummary
+}
+
+export interface WalkInTicket {
+  id: string
+  status: 'waiting' | 'called' | 'serving' | 'done' | 'left' | 'cancelled'
+  name: string
+  created_at: string
+  position: number | null
+  ahead: number
+  estimated_wait_minutes: number | null
+  wait_low: number | null
+  wait_high: number | null
+  estimated_start: string | null
+  almost_ready: boolean
+  service_name: string | null
+  preferred_barber: string | null
+  likely_barber: string | null
+  appointment: { status: string; actual_started_at: string | null; scheduled_minutes: number } | null
+  avg_service_minutes: number | null
+  shop: { name: string; slug: string; accent_color: string; timezone: string; phone: string | null; address: string }
+}
+
+// ---------------------------------------------------------------------------
+// Inventory & finance
+// ---------------------------------------------------------------------------
+export interface Product {
+  id: string
+  shop_id: string
+  owner_barber_id: string | null
+  name: string
+  brand: string | null
+  sku: string | null
+  category: string | null
+  kind: 'retail' | 'backbar'
+  unit: string
+  cost_cents: number
+  price_cents: number
+  stock_qty: number
+  low_stock_at: number
+  supplier: string | null
+  is_active: boolean
+  updated_at: string
+}
+
+export interface InventoryMovement {
+  id: string
+  product_id: string
+  barber_id: string | null
+  kind: 'purchase' | 'sale' | 'use' | 'adjustment' | 'waste' | 'return' | 'count'
+  qty_delta: number
+  stock_after: number
+  unit_cost_cents: number | null
+  unit_price_cents: number | null
+  note: string | null
+  created_at: string
+}
+
+export const EXPENSE_CATEGORIES = [
+  'rent', 'utilities', 'supplies', 'products', 'equipment', 'payroll', 'marketing', 'software', 'fees', 'taxes',
+  'maintenance', 'education', 'transport', 'other',
+] as const
+export type ExpenseCategory = (typeof EXPENSE_CATEGORIES)[number]
+
+export interface Expense {
+  id: string
+  shop_id: string
+  barber_id: string | null
+  category: ExpenseCategory
+  amount_cents: number
+  spent_on: string
+  vendor: string | null
+  note: string | null
+  method: PaymentMethod
+  created_at: string
+}
+
+export interface RentCharge {
+  id: string
+  barber_id: string
+  barber_name: string
+  chair_label: string | null
+  period: 'week' | 'month'
+  period_start: string
+  period_end: string
+  due_date: string
+  amount_cents: number
+  paid_cents: number
+  balance_cents: number
+  status: 'due' | 'partial' | 'paid' | 'overdue' | 'waived'
+  waived: boolean
+  note: string | null
+}
+
+export interface FinanceSummary {
+  period: { from: string; to: string; timezone: string; currency: string }
+  scope: 'shop' | 'barber'
+  money_in: Record<string, number>
+  money_out: Record<string, number>
+  total_in_cents: number
+  total_out_cents: number
+  net_cents: number
+  series: { date: string; in_cents: number; out_cents: number }[]
+  expenses_by_category: { category: ExpenseCategory; cents: number }[]
+  rent: { outstanding_cents: number; overdue_count?: number; charged_cents?: number; next_due?: { due_date: string; balance_cents: number } | null; plan?: { type: string; rent_cents: number | null; rent_period: string | null; percent_bps: number | null } | null }
+  inventory: { value_cents: number; retail_value_cents?: number; low_stock: number; cogs_cents: number } | null
+  // shop scope
+  pass_through?: { chair_owner_services_cents: number; tips_to_barbers_cents: number }
+  collected_by_method?: Record<string, number>
+  barbers?: { barber_id: string; name: string; barber_type: BarberType; services_cents: number; commission_cents: number; tips_cents: number; product_commission_cents: number; payout_cents: number | null; rent_paid_cents: number; rent_balance_cents: number }[]
+  // barber scope
+  barber_type?: BarberType
+  private?: boolean
+  cuts?: number
+}
+
+export interface Operations {
+  walk_ins: number
+  walk_ins_served: number
+  walk_ins_left: number
+  avg_wait_minutes: number | null
+  on_time_pct: number | null
+  timed_cuts: number
+  product_sales_cents: number
+  products_sold: number
+}
+
+export interface ServiceTimeStat {
+  barber_id: string
+  barber_name: string
+  service_id: string
+  service_name: string
+  default_minutes: number
+  booked_minutes: number | null
+  learned_minutes: number | null
+  avg_30d: number | null
+  avg_prev_30d: number | null
+  samples_30d: number
+  samples_total: number
 }

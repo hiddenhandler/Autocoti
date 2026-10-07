@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Download, Printer, Star } from 'lucide-react'
 import { useWorkspace } from '@/lib/auth'
-import { useAnalytics, useBarbers } from '@/lib/api'
+import { useAnalytics, useBarbers, useOperations, useServiceTimes } from '@/lib/api'
 import { dateStrLabel, delta, minutes, money, num, pct } from '@/lib/format'
 import { WEEKDAY_SHORT } from '@/lib/time'
 import { downloadCsv } from '@/lib/csv'
@@ -20,7 +20,7 @@ export default function Reports() {
 
   return (
     <div>
-      <PageHeader title="Reports" subtitle={`${dateStrLabel(range.from, { month: 'short', day: 'numeric', year: 'numeric' })} – ${dateStrLabel(range.to, { month: 'short', day: 'numeric', year: 'numeric' })}`}
+      <PageHeader title="Analytics" subtitle={`${dateStrLabel(range.from, { month: 'short', day: 'numeric', year: 'numeric' })} – ${dateStrLabel(range.to, { month: 'short', day: 'numeric', year: 'numeric' })}`}
         actions={
           <div className="no-print flex flex-wrap items-center gap-2">
             <RangePicker value={key} onChange={setKey} custom={custom} onCustom={setCustom} />
@@ -31,7 +31,13 @@ export default function Reports() {
             <Button variant="secondary" size="sm" icon={<Printer className="size-4" />} onClick={() => window.print()}>PDF</Button>
           </div>
         } />
-      {isLoading ? <div className="grid gap-4 md:grid-cols-2"><Skeleton className="h-64" /><Skeleton className="h-64" /></div> : error || !a ? <EmptyState title="Couldn't load reports" body={String((error as Error)?.message ?? '')} /> : <Body a={a} barberIndex={(id) => barbers?.findIndex((b) => b.id === id) ?? 0} />}
+      {isLoading ? <div className="grid gap-4 md:grid-cols-2"><Skeleton className="h-64" /><Skeleton className="h-64" /></div> : error || !a ? <EmptyState title="Couldn't load reports" body={String((error as Error)?.message ?? '')} /> : (
+        <>
+          <Body a={a} barberIndex={(id) => barbers?.findIndex((b) => b.id === id) ?? 0} />
+          <OperationsCard from={range.from} to={range.to} barberId={barberId || null} />
+          <ServiceTimes barberId={barberId || null} />
+        </>
+      )}
     </div>
   )
 }
@@ -152,7 +158,7 @@ function Body({ a, barberIndex }: { a: Analytics; barberIndex: (id: string) => n
       <div className="grid gap-6 lg:grid-cols-2">
         {/* Cut time */}
         <Card>
-          <CardHeader title="Average cut time" subtitle="From START CUT → FINISH CUT" />
+          <CardHeader title="Average cut time" subtitle="From START CUT → COMPLETE CUT" />
           {!a.cut_time.count ? <EmptyState title="No timed cuts yet" body="Once your first haircut is completed with the timer, your average cut time will appear here." /> : (
             <div className="p-5">
               <div className="grid grid-cols-3 gap-4">
@@ -277,4 +283,59 @@ function Body({ a, barberIndex }: { a: Analytics; barberIndex: (id: string) => n
 
 function hourLabel(h: number) {
   return `${h % 12 === 0 ? 12 : h % 12}${h >= 12 ? 'p' : 'a'}`
+}
+
+/** OPERATIONS: wait time, on-time %, walk-ins, product sales. */
+function OperationsCard({ from, to, barberId }: { from: string; to: string; barberId: string | null }) {
+  const { ws } = useWorkspace()
+  const { data: o } = useOperations(ws.shop_id, from, to, barberId)
+  if (!o) return <Skeleton className="mt-6 h-28" />
+  return (
+    <Card className="mt-6 grid grid-cols-2 gap-x-6 gap-y-6 p-6 md:grid-cols-3 xl:grid-cols-6">
+      <Stat label="Average wait" value={o.avg_wait_minutes !== null ? `${Math.round(o.avg_wait_minutes)} min` : '—'} sub="until the cut starts" />
+      <Stat label="On-time" value={pct(o.on_time_pct)} sub="started ≤ 5 min late" />
+      <Stat label="Walk-ins" value={num(o.walk_ins)} sub={`${o.walk_ins_served} served`} />
+      <Stat label="Walked out" value={num(o.walk_ins_left)} sub="left the queue" />
+      <Stat label="Timed cuts" value={num(o.timed_cuts)} sub="feed smart durations" />
+      <Stat label="Product sales" value={money(o.product_sales_cents, { cents: false })} sub={`${o.products_sold} items`} />
+    </Card>
+  )
+}
+
+/** Smart service time: each barber's real average per service, and what booking uses now. */
+function ServiceTimes({ barberId }: { barberId: string | null }) {
+  const { ws } = useWorkspace()
+  const { data: rows } = useServiceTimes(ws.shop_id, barberId)
+  const timed = (rows ?? []).filter((r) => r.samples_total > 0)
+  return (
+    <Card className="mt-6">
+      <CardHeader title="Cut time by barber & service" subtitle="Real averages from the haircut timer. With smart service times on, booking uses each barber's learned time after 5 timed cuts." />
+      {timed.length === 0 ? <p className="p-5 text-sm text-muted">No timed cuts yet — barbers press START CUT / COMPLETE CUT and this fills in.</p> : (
+        <div className="overflow-x-auto p-2">
+          <table className="w-full min-w-[560px] text-sm">
+            <thead><tr className="text-left text-[11px] uppercase tracking-wider text-muted">
+              <th className="px-3 py-2">Barber</th><th className="px-3 py-2">Service</th><th className="px-3 py-2 text-right">Default</th>
+              <th className="px-3 py-2 text-right">Avg (30 d)</th><th className="px-3 py-2 text-right">Prev 30 d</th><th className="px-3 py-2 text-right">Books as</th>
+            </tr></thead>
+            <tbody className="divide-y divide-line">
+              {timed.map((r) => {
+                const diff = r.avg_30d !== null && r.avg_prev_30d !== null ? Number(r.avg_30d) - Number(r.avg_prev_30d) : null
+                return (
+                  <tr key={`${r.barber_id}-${r.service_id}`}>
+                    <td className="px-3 py-2.5 font-medium">{r.barber_name}</td>
+                    <td className="px-3 py-2.5">{r.service_name}</td>
+                    <td className="px-3 py-2.5 text-right tnum text-muted">{r.default_minutes} min</td>
+                    <td className="px-3 py-2.5 text-right tnum">{r.avg_30d !== null ? `${Math.round(Number(r.avg_30d))} min` : '—'} <span className="text-xs text-muted">({r.samples_30d})</span></td>
+                    <td className="px-3 py-2.5 text-right tnum">{r.avg_prev_30d !== null ? `${Math.round(Number(r.avg_prev_30d))} min` : '—'}
+                      {diff !== null && Math.abs(diff) >= 3 && <span className={cx('ml-1 text-xs font-semibold', diff > 0 ? 'text-warning' : 'text-success')}>{diff > 0 ? '+' : ''}{Math.round(diff)}</span>}</td>
+                    <td className="px-3 py-2.5 text-right font-semibold tnum">{r.booked_minutes ?? '—'} min{r.learned_minutes ? <span className="ml-1 text-[10px] font-semibold uppercase text-accent">learned</span> : null}</td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </Card>
+  )
 }

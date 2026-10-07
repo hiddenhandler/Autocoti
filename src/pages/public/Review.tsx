@@ -30,7 +30,7 @@ export default function Review() {
         <div className="flex size-16 items-center justify-center rounded-full bg-accent text-accent-ink"><Check className="size-8" /></div>
         <h1 className="display mt-6 text-4xl">Thanks{ctx.client_first_name ? `, ${ctx.client_first_name}` : ''}!</h1>
         <p className="mt-2 text-muted">Your feedback helps {ctx.barber_name} and {ctx.shop_name}.</p>
-        <Link to={`/s/${ctx.shop_slug}/book`} className="mt-8"><Button size="lg">Book your next cut</Button></Link>
+        <Link to={`/shop/${ctx.shop_slug}/book`} className="mt-8"><Button size="lg">Book your next cut</Button></Link>
       </div>
     )
 

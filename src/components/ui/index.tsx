@@ -483,10 +483,15 @@ export function Logo({ className, mark = false }: { className?: string; mark?: b
     <span className={cx('inline-flex items-center gap-2', className)}>
       <svg viewBox="0 0 32 32" className="size-7 shrink-0" aria-hidden>
         <rect width="32" height="32" rx="9" fill="var(--accent)" />
-        <path d="M10 22.5 16 8l6 14.5" stroke="var(--accent-ink)" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" fill="none" />
-        <path d="M12.4 17h7.2" stroke="var(--accent-ink)" strokeWidth="2.6" strokeLinecap="round" />
+        {/* B + forward chevron: "Barber, go." */}
+        <path d="M7.5 8.6h5.6a3.4 3.4 0 0 1 0 6.8H7.5zM7.5 15.4h6.4a3.6 3.6 0 0 1 0 7.2H7.5z" stroke="var(--accent-ink)" strokeWidth="2.3" strokeLinejoin="round" fill="none" />
+        <path d="m20.6 12 3 4.2-3 4.2" stroke="var(--accent-ink)" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" fill="none" />
       </svg>
-      {!mark && <span className="text-[17px] font-bold tracking-tight">Autocoti</span>}
+      {!mark && (
+        <span className="text-[17px] font-extrabold tracking-tight">
+          BARBER<span className="text-accent">NGO</span>
+        </span>
+      )}
     </span>
   )
 }
