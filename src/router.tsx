@@ -47,6 +47,7 @@ export const router = createBrowserRouter([
       { path: '/', element: load(() => import('./pages/marketing/Landing')) },
       { path: '/login', element: load(() => import('./pages/auth/Login')) },
       { path: '/signup', element: load(() => import('./pages/auth/Login')) },
+      { path: '/auth/callback', element: load(() => import('./pages/auth/AuthCallback')) },
       { path: '/invite/:token', element: load(() => import('./pages/auth/AcceptInvite')) },
       { path: '/onboarding', element: load(() => import('./pages/onboarding/CreateShop')) },
 
