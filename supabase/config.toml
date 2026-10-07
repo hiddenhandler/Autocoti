@@ -1,5 +1,5 @@
 # Supabase CLI project config (supabase start / supabase db push / supabase functions deploy)
-project_id = "autocoti"
+project_id = "barberngo"
 
 [api]
 port = 54321

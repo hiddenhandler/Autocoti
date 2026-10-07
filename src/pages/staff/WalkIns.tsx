@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
-import { useSearchParams } from 'react-router'
+import { Link, useSearchParams } from 'react-router'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { DoorOpen, Plus, UserX } from 'lucide-react'
+import { DoorOpen, Plus, QrCode, UserX } from 'lucide-react'
 import { useWorkspace } from '@/lib/auth'
 import { useBarbers, useServices } from '@/lib/api'
 import { rpc } from '@/lib/supabase'
@@ -23,6 +23,7 @@ interface QueueRow {
   estimated_wait_minutes: number | null
   likely_barber_id: string | null
   notes: string | null
+  channel: 'staff' | 'online'
 }
 
 export default function WalkIns() {
@@ -58,7 +59,12 @@ export default function WalkIns() {
 
   return (
     <div className="mx-auto max-w-4xl">
-      <PageHeader title="Walk-ins" subtitle="Live queue · wait times come from each barber's real calendar" actions={<Button size="lg" icon={<Plus className="size-4" />} onClick={() => setAdding(true)}>Add walk-in</Button>} />
+      <PageHeader title="Walk-in queue" subtitle="Live queue · wait times come from each barber's real calendar"
+        actions={<>
+          <Link to="/app/share"><Button size="lg" variant="secondary" icon={<QrCode className="size-4" />}>Queue QR</Button></Link>
+          <Button size="lg" icon={<Plus className="size-4" />} onClick={() => setAdding(true)}>Add walk-in</Button>
+        </>} />
+      <p className="-mt-3 mb-5 text-sm text-muted">Customers can also join themselves at <a className="font-medium text-ink underline-offset-4 hover:underline" href={`/shop/${ws.shop_slug}/queue`} target="_blank" rel="noreferrer">/shop/{ws.shop_slug}/queue</a> and follow their place live.</p>
       {isLoading ? <Skeleton className="h-64" /> : !queue?.length ? (
         <Card><EmptyState icon={<DoorOpen className="size-6" />} title="Nobody waiting" body="Add walk-ins as they arrive — the queue estimates wait times automatically." /></Card>
       ) : (
@@ -67,7 +73,7 @@ export default function WalkIns() {
             <Card key={w.id} className="flex flex-wrap items-center gap-4 p-4">
               <div className="flex size-10 items-center justify-center rounded-full bg-surface-2 text-lg font-semibold tnum">{w.queue_position}</div>
               <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-2 font-semibold">{w.name} {w.status === 'called' && <Badge tone="warning">Called</Badge>}</div>
+                <div className="flex items-center gap-2 font-semibold">{w.name} {w.status === 'called' && <Badge tone="warning">Called</Badge>}{w.channel === 'online' && <Badge tone="info">Joined online</Badge>}</div>
                 <div className="text-sm text-muted">{w.service_name ?? 'No service'} · {w.preferred_barber_id ? `wants ${bname(w.preferred_barber_id)}` : 'any barber'} · arrived {ago(w.created_at)}</div>
               </div>
               <div className="text-right">

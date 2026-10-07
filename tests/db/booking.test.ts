@@ -111,8 +111,12 @@ describe('booking', () => {
     expect(Number(a.expected_price_cents)).toBe(4000)
     expect((new Date(a.ends_at).getTime() - new Date(a.starts_at).getTime()) / 60000).toBe(40)
 
-    const notes = await sql(`select event, status from notifications where appointment_id = $1 and audience = 'client' order by scheduled_for`, [res.appointment_id])
+    const notes = await sql(`select event, status from notifications where appointment_id = $1 and audience = 'client' and channel = 'email' order by scheduled_for`, [res.appointment_id])
     expect(notes.map((n) => n.event)).toEqual(['appointment.created', 'appointment.reminder', 'appointment.reminder'])
+    // Every client message is also queued on WhatsApp (shop default) to the normalised phone.
+    const wa = await sql(`select event, to_address from notifications where appointment_id = $1 and channel = 'whatsapp' order by scheduled_for`, [res.appointment_id])
+    expect(wa.map((n) => n.event)).toEqual(['appointment.created', 'appointment.reminder', 'appointment.reminder'])
+    expect(wa[0].to_address).toMatch(/^\d+$/)
 
     // Same phone, different formatting → same client record
     const res2 = await anon.rpc('book_appointment', {

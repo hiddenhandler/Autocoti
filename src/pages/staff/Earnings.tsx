@@ -64,7 +64,7 @@ export function BarberEarnings({ barberId, embedded }: { barberId: string; embed
             <Card className="p-5"><Stat label="Revenue generated" value={money(me.net_revenue_cents)} /></Card>
             <Card className="p-5"><Stat label="Tips" value={money(me.tips_cents)} /></Card>
             <Card className="p-5"><Stat label="Average ticket" value={money(me.avg_ticket_cents)} /></Card>
-            <Card className="p-5"><Stat label="Average cut" value={me.avg_cut_minutes ? minutes(me.avg_cut_minutes) : '—'} sub={me.avg_scheduled_minutes ? `booked ${minutes(me.avg_scheduled_minutes)}` : 'Use START/FINISH CUT'} /></Card>
+            <Card className="p-5"><Stat label="Average cut" value={me.avg_cut_minutes ? minutes(me.avg_cut_minutes) : '—'} sub={me.avg_scheduled_minutes ? `booked ${minutes(me.avg_scheduled_minutes)}` : 'Use START/COMPLETE CUT'} /></Card>
             <Card className="p-5"><Stat label="Rebooking" value={pct(me.rebooking_rate)} sub={`${me.clients_served} clients · ${me.new_clients} new`} /></Card>
           </div>
           {a!.series.length > 1 && (

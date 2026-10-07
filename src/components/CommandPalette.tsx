@@ -49,9 +49,13 @@ export function CommandPalette({ open, onClose }: { open: boolean; onClose: () =
       { type: 'action', id: 'new-appt', title: 'New appointment', to: '/app/calendar?new=1' },
       { type: 'action', id: 'walkin', title: 'Add walk-in', to: '/app/walk-ins?add=1' },
       { type: 'action', id: 'calendar', title: 'Open calendar', to: '/app/calendar' },
-      ...(can('reports.shop') ? [{ type: 'action' as const, id: 'reports', title: 'Reports', to: '/app/reports' }, { type: 'action' as const, id: 'ask', title: 'Ask the AI assistant', to: '/app/insights' }] : []),
+      { type: 'action', id: 'chairs', title: 'Chairs — live status', to: '/app/chairs' },
+      { type: 'action', id: 'inventory', title: 'Inventory', to: '/app/inventory' },
+      { type: 'action', id: 'finance', title: can('finance.manage') ? 'Finance' : 'My money', to: '/app/finance' },
+      { type: 'action', id: 'qr', title: 'Booking page & QR code', to: '/app/share' },
+      ...(can('reports.shop') ? [{ type: 'action' as const, id: 'reports', title: 'Analytics', to: '/app/reports' }, { type: 'action' as const, id: 'ask', title: 'Ask the AI assistant', to: '/app/insights' }] : []),
       ...(can('shop.settings') ? [{ type: 'action' as const, id: 'settings', title: 'Settings', to: '/app/settings' }] : []),
-      { type: 'action', id: 'public', title: 'View public booking page', to: `/s/${ws.shop_slug}` },
+      { type: 'action', id: 'public', title: 'View public booking page', to: `/shop/${ws.shop_slug}` },
     ]
     return all.filter((a) => !q || a.title.toLowerCase().includes(q.toLowerCase()))
   }, [q, can, ws.shop_slug])

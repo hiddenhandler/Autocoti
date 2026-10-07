@@ -1,28 +1,32 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router'
-import { ArrowRight, BarChart3, CalendarClock, Check, CreditCard, DoorOpen, Gauge, ListOrdered, Play, RotateCcw, Scissors, ShieldCheck, Sparkles, Timer, Users } from 'lucide-react'
+import { Armchair, ArrowRight, CalendarClock, Check, CreditCard, DoorOpen, Gauge, Landmark, ListOrdered, Package, Play, QrCode, Radio, RotateCcw, Scissors, ShieldCheck, Sparkles, Timer, Users } from 'lucide-react'
 import { Button, cx, Logo } from '@/components/ui'
 
 // Marketing page. The product previews below are illustrative mockups and
 // are labelled as such — the product itself never shows fabricated data.
 
 const FLOW = [
-  { k: 'CLIENT', t: 'Finds a barber', icon: Users },
-  { k: 'BOOK', t: 'Real-time slots', icon: CalendarClock },
+  { k: 'SCAN', t: "Your shop's QR or link", icon: QrCode },
+  { k: 'SEE', t: 'Who is available now', icon: Users },
+  { k: 'BOOK', t: 'Or join the queue', icon: CalendarClock },
   { k: 'CUT', t: 'Timer starts', icon: Timer },
   { k: 'PAY', t: 'Price, tip, method', icon: CreditCard },
   { k: 'REBOOK', t: 'Next cut, one tap', icon: RotateCcw },
-  { k: 'OWNER', t: 'Sees it all', icon: BarChart3 },
 ]
 
-const OS = ['BOOKING', 'OPERATIONS', 'BARBERS', 'CLIENTS', 'MONEY', 'ANALYTICS', 'GROWTH']
+const OS = ['SHOP', 'CHAIRS', 'BARBERS', 'CUSTOMERS', 'APPOINTMENTS', 'PAYMENTS', 'ANALYTICS']
 
 const FEATURES = [
-  { icon: CalendarClock, t: 'Smart availability', d: 'Slots are calculated from real schedules, breaks, buffers and bookings — and fill the gaps right after the last client instead of a rigid 30-minute grid.' },
-  { icon: Play, t: 'Haircut timer', d: 'START CUT / FINISH CUT records actual vs booked time on every chair. Your real average cut time, by barber, service, day and hour.' },
+  { icon: Radio, t: 'Live barber status', d: 'Available, cutting, on break, queue, offline — updated by the real calendar and the haircut timer. Customers see who can take them right now.' },
+  { icon: Armchair, t: 'Chairs & chair owners', d: 'Employees on commission or chair owners who keep 100% and pay rent. Each chair owner controls their own schedule, prices, customers and money.' },
+  { icon: Package, t: 'Inventory per business', d: 'Shop stock and each chair owner’s private stock: receive, use, sell, count. Low-stock alerts, margins and cost of goods — numbers that always add up.' },
+  { icon: Landmark, t: 'Finance', d: 'Money in, money out, profit. Chair rent ledger, barber payouts, expenses — and a take-home view for every chair owner.' },
+  { icon: Play, t: 'Haircut timer & smart times', d: 'START / COMPLETE CUT records real cut time. BarberNGo learns each barber’s average per service and books with it.' },
+  { icon: CalendarClock, t: 'Smart availability', d: 'Slots come from real schedules, breaks, buffers and bookings — and a cut that finishes early frees the chair instantly.' },
   { icon: Gauge, t: 'Chair utilization', d: 'Available vs booked chair-minutes with a weekday × hour heatmap. Know exactly when to add hours — and when you are paying for empty chairs.' },
   { icon: CreditCard, t: 'Payments, tips, commissions', d: 'Every checkout records price, tip, discount and method. Percentage, fixed, tiered, booth-rental and hybrid commissions calculate themselves.' },
-  { icon: DoorOpen, t: 'Walk-in queue', d: 'Live queue with wait estimates pulled from each barber’s real calendar. NEXT CLIENT puts them in the chair.' },
+  { icon: DoorOpen, t: 'Walk-in queue', d: 'Customers join from your QR code, see “You are #4 · 20–30 min” live, and get a WhatsApp when they’re almost up.' },
   { icon: ListOrdered, t: 'Waitlist that refills', d: 'A cancellation instantly offers the slot to matching waitlisted clients. First to claim gets it — double booking is impossible at the database level.' },
   { icon: Users, t: 'Client CRM & retention', d: 'Visit rhythm per client, cut notes, preferences. Active, at-risk and lost clients surface automatically — with a one-tap win-back.' },
   { icon: Sparkles, t: 'Insights & AI assistant', d: '“Saturday 2–5 PM is at 95% capacity.” Ask “How much did Carlos earn last month?” — answered from your real numbers, never guessed.' },
@@ -31,7 +35,7 @@ const FEATURES = [
 
 export default function Landing() {
   useEffect(() => {
-    document.title = 'Autocoti — Run your barbershop. Not your spreadsheet.'
+    document.title = 'BarberNGo — Your shop. Your chairs. Your schedule.'
   }, [])
   return (
     <div className="overflow-x-hidden">
@@ -55,14 +59,15 @@ export default function Landing() {
         <div className="pointer-events-none absolute inset-0" style={{ background: 'radial-gradient(900px 500px at 75% 0%, color-mix(in oklab, var(--accent) 18%, transparent), transparent 70%)' }} />
         <div className="relative mx-auto grid max-w-6xl items-center gap-12 px-5 pb-20 pt-16 lg:grid-cols-[1.1fr_1fr] lg:pt-24">
           <div className="animate-rise">
-            <div className="eyebrow mb-5 inline-flex items-center gap-2"><span className="pole inline-block h-2 w-8 rounded-full" /> The operating system for your barbershop</div>
+            <div className="eyebrow mb-5 inline-flex items-center gap-2"><span className="pole inline-block h-2 w-8 rounded-full" /> For barbershop owners & chair owners</div>
             <h1 className="display text-[58px] leading-[0.92] sm:text-[84px]">
-              Run your barbershop.<br /><span className="italic text-accent">Not your spreadsheet.</span>
+              Your shop. Your chairs.<br /><span className="italic text-accent">Your schedule.</span>
             </h1>
-            <p className="mt-6 max-w-lg text-lg text-muted">Bookings, barbers, clients, payments and business intelligence — all in one place.</p>
+            <p className="mt-6 max-w-lg text-lg text-muted">Your own branded booking page where <b className="text-ink">your</b> customers see <b className="text-ink">your</b> barbers live, book or join the queue — plus chairs, rent, inventory and finances in one app. Know who’s available. Book your cut. Go.</p>
+            <p className="mt-3 max-w-lg text-sm text-muted">Not a marketplace: customers never see other shops.</p>
             <div className="mt-9 flex flex-wrap gap-3">
               <Link to="/signup?intent=owner"><Button size="xl" icon={<ArrowRight className="size-5" />} className="flex-row-reverse">START FREE</Button></Link>
-              <a href="mailto:hello@autocoti.com?subject=Autocoti%20demo"><Button size="xl" variant="outline">BOOK A DEMO</Button></a>
+              <a href="mailto:hello@barberngo.com?subject=BarberNGo%20demo"><Button size="xl" variant="outline">BOOK A DEMO</Button></a>
             </div>
             <div className="mt-6 flex flex-wrap gap-x-5 gap-y-2 text-sm text-muted">
               {['14-day free trial', 'No card required', 'Set up in 2 minutes'].map((t) => <span key={t} className="inline-flex items-center gap-1.5"><Check className="size-4 text-accent" />{t}</span>)}
@@ -91,7 +96,7 @@ export default function Landing() {
 
       {/* PRODUCT */}
       <section id="product" className="mx-auto max-w-6xl space-y-28 px-5 py-24">
-        <Showcase eyebrow="For clients" title="Book my haircut." body="Pick a service, a barber — or “first available” — and see times that are actually free, right now. Rebook the same barber in one tap. No app download needed." points={['Real-time availability', 'First available across barbers', 'Reschedule & cancel by policy', 'Waitlist when the day is full']}>
+        <Showcase eyebrow="For clients" title="Book my haircut." body="Scan the shop’s QR, see which barber is free right now, book or join the walk-in queue, and watch the cut status live. Rebook the same barber in one tap. No app download needed." points={['Real-time availability', 'First available across barbers', 'Reschedule & cancel by policy', 'Waitlist when the day is full']}>
           <PhoneBooking />
         </Showcase>
         <Showcase flip eyebrow="For barbers" title="Who is next?" body="The whole day from a phone. One big button starts the cut and the timer; finishing opens checkout and suggests the next booking before the client leaves." points={['Today, next client, time remaining', 'Start / finish cut timer', 'Record price, tip, payment', 'Own earnings, privately']}>
@@ -106,7 +111,7 @@ export default function Landing() {
       <section className="border-y border-line bg-surface py-20">
         <div className="mx-auto max-w-6xl px-5 text-center">
           <div className="eyebrow">Not just another booking app</div>
-          <h2 className="display mt-3 text-5xl sm:text-6xl">The operating system for your barbershop</h2>
+          <h2 className="display mt-3 text-5xl sm:text-6xl">Built around your shop</h2>
           <div className="mt-10 flex flex-wrap items-center justify-center gap-x-3 gap-y-4 text-sm font-bold tracking-[0.16em]">
             {OS.map((o, i) => (
               <span key={o} className="inline-flex items-center gap-3">
@@ -138,8 +143,8 @@ export default function Landing() {
         <p className="mt-3 text-center text-muted">Every plan starts with a 14-day free trial.</p>
         <div className="mt-12 grid gap-4 md:grid-cols-3">
           {[
-            { n: 'Starter', p: 29, d: 'The independent barber', f: ['1 barber', 'Online booking & calendar', 'Client management', 'Haircut timer & basic analytics'] },
-            { n: 'Shop', p: 79, d: 'Multi-chair shops', f: ['Unlimited barbers', 'Advanced analytics & exports', 'Walk-ins & waitlist', 'Commissions & automations'], hot: true },
+            { n: 'Starter', p: 29, d: 'The independent barber', f: ['1 barber / chair owner', 'Your booking page + QR', 'Customers, timer & live status', 'Inventory, expenses & take-home'] },
+            { n: 'Shop', p: 79, d: 'Multi-chair shops', f: ['Unlimited chairs & barbers', 'Chair owners, rent & payouts', 'Live walk-in queue & waitlist', 'Finance, analytics & exports'], hot: true },
             { n: 'Pro', p: 149, d: 'Growth & multiple locations', f: ['Everything in Shop', 'AI insights & assistant', 'Marketing, gift cards, memberships', 'Multi-location & custom domain'] },
           ].map((p) => (
             <div key={p.n} className={cx('rounded-3xl border p-7', p.hot ? 'border-accent bg-surface shadow-card' : 'border-line')}>
@@ -162,7 +167,7 @@ export default function Landing() {
       </section>
       <footer className="border-t border-line py-10 text-center text-sm text-muted">
         <Logo className="justify-center" />
-        <p className="mt-3">© {new Date().getFullYear()} Autocoti</p>
+        <p className="mt-3">© {new Date().getFullYear()} BarberNGo</p>
       </footer>
     </div>
   )
@@ -245,7 +250,7 @@ function PhoneBarber() {
           <circle cx="60" cy="60" r="50" fill="none" stroke="var(--accent)" strokeWidth="7" strokeLinecap="round" strokeDasharray={`${pct * 314} 314`} />
         </svg>
         <div className="-mt-[86px] mb-12 text-2xl font-semibold tnum">{Math.floor(s / 60)}:{String(s % 60).padStart(2, '0')}</div>
-        <div className="rounded-xl bg-accent py-2.5 text-sm font-bold text-accent-ink">FINISH CUT</div>
+        <div className="rounded-xl bg-accent py-2.5 text-sm font-bold text-accent-ink">COMPLETE CUT</div>
       </div>
       <div className="mt-4 space-y-2 text-xs">
         {[['3:30', 'Mike R.', 'Haircut + Beard'], ['4:30', 'David K.', 'Haircut'], ['5:15', 'Walk-in', 'Beard']].map(([t, n, sv]) => (

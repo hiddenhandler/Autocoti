@@ -83,7 +83,7 @@ export function ShopNotFound({ children }: { children?: ReactNode }) {
     <div className="flex min-h-dvh flex-col items-center justify-center p-6 text-center">
       <h1 className="display text-4xl">Shop not found</h1>
       <p className="mt-2 max-w-sm text-sm text-muted">{children ?? "This booking page doesn't exist or isn't published yet."}</p>
-      <Link to="/" className="mt-6 text-sm font-semibold underline-offset-4 hover:underline">Go to Autocoti</Link>
+      <Link to="/" className="mt-6 text-sm font-semibold underline-offset-4 hover:underline">Go to BarberNGo</Link>
     </div>
   )
 }
@@ -92,8 +92,8 @@ export function ShopNotFound({ children }: { children?: ReactNode }) {
 export function icsHref(opts: { title: string; start: string; end: string; location?: string; description?: string }) {
   const f = (d: string) => new Date(d).toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '')
   const body = [
-    'BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Autocoti//EN', 'BEGIN:VEVENT',
-    `UID:${f(opts.start)}-${Math.random().toString(36).slice(2)}@autocoti`,
+    'BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//BarberNGo//EN', 'BEGIN:VEVENT',
+    `UID:${f(opts.start)}-${Math.random().toString(36).slice(2)}@barberngo`,
     `DTSTAMP:${f(new Date().toISOString())}`, `DTSTART:${f(opts.start)}`, `DTEND:${f(opts.end)}`,
     `SUMMARY:${opts.title}`, opts.location ? `LOCATION:${opts.location}` : '', opts.description ? `DESCRIPTION:${opts.description}` : '',
     'END:VEVENT', 'END:VCALENDAR',
@@ -101,7 +101,7 @@ export function icsHref(opts: { title: string; start: string; end: string; locat
   return `data:text/calendar;charset=utf-8,${encodeURIComponent(body)}`
 }
 
-const CLIENT_KEY = 'autocoti.client'
+const CLIENT_KEY = 'barberngo.client'
 export interface SavedClient { first_name: string; last_name: string; phone: string; email: string }
 export function loadSavedClient(): SavedClient | null {
   try {

@@ -1,4 +1,6 @@
-# Autocoti — architecture & product reference
+# BarberNGo — architecture & product reference
+
+> BarberNGo additions (migrations `…16_chairs_inventory_finance.sql`, `…17_live_queue_smart_time.sql`) are summarised in §12.
 
 ## 1. System audit (starting point)
 
@@ -159,3 +161,21 @@ The PWA is installable (manifest, maskable icons, service worker, standalone dis
 6. Dynamic pricing for peak/off-peak windows, driven by the utilization heatmap.
 7. Multi-location comparison dashboard (data model ready; UI shows one location at a time).
 8. Client mobile app with saved cards and one-tap "same as last time".
+
+
+## 12. BarberNGo: chairs, chair owners, inventory, finance, live status
+
+| Area | Tables / RPCs | Rules |
+|---|---|---|
+| Chairs | `chairs`, `save_chair`, `delete_chair`, `shop_live_board` | One barber per chair (moving frees the old chair). |
+| Employee vs chair owner | `barbers.barber_type`, `set_barber_type`, `set_my_service_price`, `save_my_service`, `app.can_edit_schedule` | Chair owner ⇒ booth-rental plan (keeps 100%), controls own prices/services/hours. Employees follow `shop_settings.barbers_can_set_prices` / `employees_manage_schedule`. |
+| Chair rent | `rent_charges`, `rent_payments`, `rent_ledger`, `record_rent_payment`, `set_rent_charge` | Charges generated idempotently per week/month from the effective-dated commission plan; due after `rent_due_days`; overpayment refused; only `finance.manage` records payments. |
+| Inventory | `products`, `inventory_movements`, `save_product`, `move_stock`, `sell_products`, `archive_product` | Stock moves only through RPCs (purchase, use, waste, return, adjustment, count, sale), never negative. `owner_barber_id` = a chair owner's private stock, invisible to the shop owner. Sales: own products 100% to the barber (`product_own`), shop products pay `product_commission_bps` (`product`). Voids restock. Product revenue never counts as service revenue. |
+| Expenses | `expenses` (RLS CRUD) | Shop expenses need `finance.manage`; a chair owner's are private to them. |
+| Finance | `finance_summary(shop, from, to, barber?)` | Cash basis. Shop: services (employees) + product sales + rent collected + fees + tips kept − commissions − product commissions − inventory purchases − expenses; plus payouts per barber, rent outstanding, inventory value/COGS, pass-through. Barber: their share + tips + products − rent − inventory − expenses (private parts only for the barber). |
+| Live status | `app.barber_live`, `get_shop_live` (public), `set_my_presence` | CUTTING · BOOKED · BREAK · QUEUE · AVAILABLE · OFFLINE · NOT_WORKING from the timer, calendar, schedule gaps, blocks, presence and queue. Public pages poll every 10–15 s (anon has no Realtime access by design); staff screens use Realtime + polling. |
+| Walk-in queue | `join_walk_in_queue`, `get_walk_in_ticket`, `leave_walk_in_queue`, `app.walk_in_queue_rows` | No account; idempotent per phone; capacity check; notifications `queue.joined`, `queue.almost_ready` (threshold setting), `queue.your_turn`. |
+| Smart service time | `app.learned_minutes`, `app.barber_service_quote`, `service_time_stats`, `booking_settings.smart_durations` | Override › learned (60–150% of default) › default. |
+| Early finish | `appointments.released_at` / `occupied_until` | The no-overlap constraint and the engine use `occupied_until`, so a chair is free the minute a cut completes. |
+| Operations | `shop_operations` | Average wait, on-time %, walk-ins (served / left), timed cuts, product sales. |
+| Notifications | `shop_settings.sms_channel` | Every client message is also queued on WhatsApp/SMS (Twilio adapter); channel templates fall back to the email text. |

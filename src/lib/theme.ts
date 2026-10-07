@@ -2,7 +2,7 @@ export type ThemePref = 'system' | 'light' | 'dark'
 
 export function getThemePref(): ThemePref {
   try {
-    return (localStorage.getItem('autocoti.theme') as ThemePref) || 'system'
+    return (localStorage.getItem('barberngo.theme') as ThemePref) || 'system'
   } catch {
     return 'system'
   }
@@ -10,7 +10,7 @@ export function getThemePref(): ThemePref {
 
 export function setThemePref(p: ThemePref) {
   try {
-    localStorage.setItem('autocoti.theme', p)
+    localStorage.setItem('barberngo.theme', p)
   } catch {
     /* storage unavailable */
   }

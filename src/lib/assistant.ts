@@ -215,11 +215,11 @@ export function composeAnswer(p: ParsedQuestion, a: Analytics | null, clients?: 
       const ct = a.cut_time
       if (p.barberId) {
         const b = ct.by_barber.find((x) => x.barber_id === p.barberId)
-        if (!b) return { text: `No timed cuts for ${p.barberName} ${period}. Times appear once a barber uses START/FINISH CUT.`, facts: [], noData: true }
+        if (!b) return { text: `No timed cuts for ${p.barberName} ${period}. Times appear once a barber uses START/COMPLETE CUT.`, facts: [], noData: true }
         return { text: `${b.name}'s average cut takes ${minutes(b.avg_minutes)} (booked: ${minutes(b.scheduled_minutes)}), over ${b.count} timed cuts ${period}.`, facts: [] }
       }
       if (!ct.count || ct.avg_actual_minutes === null)
-        return { text: `No timed cuts ${period}. Once barbers use START CUT / FINISH CUT, average cut time appears here.`, facts: [], noData: true }
+        return { text: `No timed cuts ${period}. Once barbers use START CUT / COMPLETE CUT, average cut time appears here.`, facts: [], noData: true }
       return {
         text: `Your average haircut takes ${minutes(ct.avg_actual_minutes)} vs ${minutes(ct.avg_scheduled_minutes)} booked (${pct(ct.efficiency)} efficiency), across ${ct.count} timed cuts ${period}.`,
         facts: ct.by_barber.map((b) => ({ label: b.name, value: `${minutes(b.avg_minutes)} · ${b.count} cuts` })),

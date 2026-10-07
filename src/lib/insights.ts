@@ -1,7 +1,7 @@
 // Smart insights: turn real analytics into recommendations.
 // Every rule has a minimum-data threshold so we never draw conclusions from
 // noise, and every number in the text comes from the analytics payload.
-import type { Analytics } from './types'
+import type { Analytics, FinanceSummary, Operations, Product, ServiceTimeStat } from './types'
 import { money } from './format'
 import { WEEKDAY_NAMES } from './time'
 
@@ -254,5 +254,92 @@ export function generateInsights(a: Analytics, opts: { currency?: string } = {})
     })
   }
 
+  return out.sort((x, y) => y.score - x.score)
+}
+
+/**
+ * Operational insights from the barber timer, inventory, chair rent and the
+ * walk-in queue. Same rule: thresholds first, numbers only from the data.
+ */
+export function operationalInsights(d: {
+  serviceTimes?: ServiceTimeStat[]
+  products?: Product[]
+  finance?: FinanceSummary
+  ops?: Operations
+  currency?: string
+}): Insight[] {
+  const out: Insight[] = []
+  const m = (c: number) => money(c, { currency: d.currency, cents: false })
+
+  // Barber × service cut time drift (30 days vs the 30 before; ≥ 5 cuts in each).
+  for (const t of d.serviceTimes ?? []) {
+    if (t.samples_30d < 5 || t.avg_30d === null || t.avg_prev_30d === null || t.samples_total - t.samples_30d < 5) continue
+    const diff = Math.round(Number(t.avg_30d) - Number(t.avg_prev_30d))
+    if (Math.abs(diff) < 5) continue
+    const first = t.barber_name.split(' ')[0]
+    out.push({
+      id: `drift-${t.barber_id}-${t.service_id}`,
+      kind: diff > 0 ? 'warning' : 'win',
+      title: `${first}'s average ${t.service_name} time ${diff > 0 ? 'increased' : 'dropped'} ${Math.abs(diff)} minutes this month`,
+      detail: `${Math.round(Number(t.avg_prev_30d))} → ${Math.round(Number(t.avg_30d))} min across ${t.samples_30d} timed cuts.`,
+      recommendation: t.booked_minutes
+        ? `Online booking now reserves ${t.booked_minutes} min for ${first}'s ${t.service_name}${t.learned_minutes ? ' (learned from the timer)' : ''}.`
+        : undefined,
+      action: { label: 'See cut times', to: '/app/reports' },
+      score: diff > 0 ? 70 : 45,
+    })
+  }
+
+  // Low stock (active products at or under their alert level).
+  const low = (d.products ?? []).filter((p) => p.is_active && p.stock_qty <= p.low_stock_at)
+  if (low.length) {
+    out.push({
+      id: 'low-stock',
+      kind: 'warning',
+      title: `${low.length} product${low.length > 1 ? 's are' : ' is'} low on stock`,
+      detail: low.slice(0, 4).map((p) => `${p.name} (${p.stock_qty} left)`).join(', ') + (low.length > 4 ? '…' : ''),
+      recommendation: 'Reorder before the weekend rush.',
+      action: { label: 'Open inventory', to: '/app/inventory' },
+      score: 75,
+    })
+  }
+
+  // Chair rent overdue.
+  const f = d.finance
+  if (f && f.scope === 'shop' && (f.rent.overdue_count ?? 0) > 0) {
+    out.push({
+      id: 'rent-overdue',
+      kind: 'warning',
+      title: `${f.rent.overdue_count} chair rent payment${f.rent.overdue_count! > 1 ? 's are' : ' is'} overdue`,
+      detail: `${m(f.rent.outstanding_cents)} outstanding from chair owners.`,
+      action: { label: 'Record rent', to: '/app/finance' },
+      score: 85,
+    })
+  }
+  if (f && f.scope === 'shop' && f.total_in_cents > 0 && f.net_cents < 0) {
+    out.push({
+      id: 'negative-profit',
+      kind: 'warning',
+      title: `Costs are ${m(-f.net_cents)} ahead of income this period`,
+      detail: `${m(f.total_in_cents)} in vs ${m(f.total_out_cents)} out.`,
+      recommendation: 'Check the biggest expense categories and unpaid rent.',
+      action: { label: 'Open finance', to: '/app/finance' },
+      score: 80,
+    })
+  }
+
+  // Walk-ins walking out.
+  const o = d.ops
+  if (o && o.walk_ins >= 5 && o.walk_ins_left / o.walk_ins >= 0.2) {
+    out.push({
+      id: 'walkouts',
+      kind: 'warning',
+      title: `${o.walk_ins_left} of ${o.walk_ins} walk-ins left without a cut`,
+      detail: o.avg_wait_minutes !== null ? `Average wait was ${Math.round(o.avg_wait_minutes)} min.` : 'Long waits are losing customers.',
+      recommendation: 'Put another barber on the floor at peak times, or share your QR so people book instead of waiting.',
+      action: { label: 'Booking page & QR', to: '/app/share' },
+      score: 72,
+    })
+  }
   return out.sort((x, y) => y.score - x.score)
 }

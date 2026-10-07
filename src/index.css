@@ -1,7 +1,7 @@
 @import "tailwindcss";
 
 /* -----------------------------------------------------------------------------
-   Autocoti design tokens
+   BarberNGo design tokens
    Warm, high-contrast, premium. Dark is the signature look; light is warm paper.
    --accent is overridable per shop (owner-configurable brand colour).
 ----------------------------------------------------------------------------- */
@@ -265,5 +265,11 @@ body {
   body {
     background: white;
     color: black;
+  }
+  .print-area {
+    border: none !important;
+    box-shadow: none !important;
+    min-height: 95vh;
+    justify-content: center;
   }
 }

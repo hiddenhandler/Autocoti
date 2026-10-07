@@ -1,7 +1,7 @@
 {
-  "name": "Autocoti",
-  "short_name": "Autocoti",
-  "description": "The operating system for your barbershop.",
+  "name": "BarberNGo",
+  "short_name": "BarberNGo",
+  "description": "Your shop. Your chairs. Your schedule.",
   "start_url": "/app",
   "scope": "/",
   "display": "standalone",
@@ -17,6 +17,7 @@
   "shortcuts": [
     { "name": "Today", "url": "/app/today" },
     { "name": "Calendar", "url": "/app/calendar" },
-    { "name": "Add walk-in", "url": "/app/walk-ins?add=1" }
+    { "name": "Queue", "url": "/app/walk-ins" },
+    { "name": "Chairs", "url": "/app/chairs" }
   ]
 }

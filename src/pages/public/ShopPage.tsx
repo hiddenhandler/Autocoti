@@ -1,18 +1,35 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router'
-import { Clock, AtSign, MapPin, Phone, Star } from 'lucide-react'
-import { usePublicShop, useSlots, useFirstAvailable, ShopNotFound, PublicFooter, track } from './shared'
-import { Avatar, Badge, Button, Card, Chip, cx, Skeleton } from '@/components/ui'
-import { money, minutes, relativeDay, time } from '@/lib/format'
-import { todayInTz, WEEKDAY_NAMES } from '@/lib/time'
-import type { PublicShop } from '@/lib/types'
+import { useQuery } from '@tanstack/react-query'
+import { AtSign, Clock, Globe, MapPin, Phone, QrCode, Share2, Star, Timer, Users } from 'lucide-react'
+import { usePublicShop, ShopNotFound, PublicFooter, track } from './shared'
+import { Avatar, Badge, Button, Card, cx, Sheet, Skeleton } from '@/components/ui'
+import { LIVE, LivePill, liveLines, nextAvailableLabel } from '@/components/live'
+import { QrImage } from '@/components/QrImage'
+import { money, minutes } from '@/lib/format'
+import { WEEKDAY_NAMES } from '@/lib/time'
+import { rpc, APP_URL } from '@/lib/supabase'
+import type { PublicShop, ShopLive } from '@/lib/types'
+
+/** Live view of the shop: polled so a barber starting/finishing a cut shows up within seconds. */
+export function useShopLive(slug: string | undefined) {
+  return useQuery({
+    queryKey: ['shop_live', slug],
+    enabled: !!slug,
+    refetchInterval: 15_000,
+    refetchOnWindowFocus: true,
+    queryFn: () => rpc<ShopLive | null>('get_shop_live', { p_slug: slug }),
+  })
+}
 
 export default function ShopPage() {
   const { slug } = useParams()
   const { data: shop, isLoading } = usePublicShop(slug)
+  const { data: live } = useShopLive(slug)
+  const [qrOpen, setQrOpen] = useState(false)
   useEffect(() => {
     if (shop) {
-      document.title = `${shop.name} — Book online`
+      document.title = `${shop.name} — Book your cut`
       track(shop.id, 'view')
     }
   }, [shop])
@@ -20,95 +37,142 @@ export default function ShopPage() {
   if (isLoading) return <ShopSkeleton />
   if (!shop) return <ShopNotFound />
 
+  const city = shop.address.city ?? shop.address.region
   const addr = [shop.address.line1, shop.address.city, shop.address.region].filter(Boolean).join(', ')
+  const shopUrl = `${APP_URL}/shop/${shop.slug}`
+  const queueOn = !!live?.walk_ins.enabled
+  const openNow = live?.open_now ?? isOpenNow(shop)
+
+  const share = async () => {
+    try {
+      if (navigator.share) await navigator.share({ title: shop.name, text: `Book your cut at ${shop.name}`, url: shopUrl })
+      else {
+        await navigator.clipboard.writeText(shopUrl)
+        alert('Link copied')
+      }
+    } catch {
+      /* dismissed */
+    }
+  }
 
   return (
     <div className="min-h-dvh">
       {shop.is_preview && (
         <div className="bg-warning/15 px-4 py-2 text-center text-xs font-semibold text-warning">Preview — this page isn't published yet. Only your team can see it.</div>
       )}
-      {/* Hero */}
+
+      {/* Shop header */}
       <section className="relative overflow-hidden border-b border-line">
         {shop.cover_url ? (
-          <img src={shop.cover_url} alt="" className="absolute inset-0 size-full object-cover opacity-35" />
+          <img src={shop.cover_url} alt="" className="absolute inset-0 size-full object-cover opacity-30" />
         ) : (
-          <div className="absolute inset-0" style={{ background: 'radial-gradient(1200px 400px at 20% -10%, color-mix(in oklab, var(--accent) 22%, transparent), transparent)' }} />
+          <div className="absolute inset-0" style={{ background: 'radial-gradient(900px 360px at 15% -10%, color-mix(in oklab, var(--accent) 24%, transparent), transparent)' }} />
         )}
         <div className="pole absolute inset-x-0 bottom-0 h-1 opacity-50" />
-        <div className="relative mx-auto max-w-5xl px-5 pb-10 pt-8 sm:pb-14 sm:pt-12">
-          <div className="flex items-center gap-3">
-            {shop.logo_url ? <img src={shop.logo_url} alt="" className="size-14 rounded-2xl object-cover" /> : <Avatar name={shop.name} size={56} color={shop.accent_color} className="rounded-2xl" />}
+        <div className="relative mx-auto max-w-3xl px-5 pb-8 pt-6 sm:pb-12">
+          <div className="flex items-center justify-between">
+            <span className="text-[11px] font-extrabold tracking-[0.2em] text-muted">BARBER<span className="text-accent">NGO</span></span>
+            <div className="flex gap-1">
+              <button onClick={() => setQrOpen(true)} aria-label="Show QR code" className="rounded-full bg-surface/70 p-2 text-muted backdrop-blur hover:text-ink"><QrCode className="size-4" /></button>
+              <button onClick={share} aria-label="Share" className="rounded-full bg-surface/70 p-2 text-muted backdrop-blur hover:text-ink"><Share2 className="size-4" /></button>
+            </div>
+          </div>
+          <div className="mt-6 flex items-center gap-4">
+            {shop.logo_url ? <img src={shop.logo_url} alt="" className="size-16 rounded-2xl object-cover" /> : <Avatar name={shop.name} size={64} color={shop.accent_color} className="rounded-2xl" />}
+            <div className="min-w-0">
+              <h1 className="text-[28px] font-extrabold uppercase leading-[1.05] tracking-tight sm:text-[40px]">{shop.name}</h1>
+              {shop.tagline && <p className="mt-1 text-[15px] text-muted">{shop.tagline}</p>}
+            </div>
+          </div>
+          <div className="mt-5 flex flex-wrap items-center gap-x-4 gap-y-2 text-[15px] font-medium">
             {shop.rating?.count ? (
-              <span className="inline-flex items-center gap-1 rounded-full bg-surface/80 px-3 py-1 text-sm font-semibold backdrop-blur">
-                <Star className="size-4 fill-accent text-accent" /> {Number(shop.rating.average).toFixed(1)} <span className="font-normal text-muted">({shop.rating.count})</span>
-              </span>
+              <span className="inline-flex items-center gap-1"><Star className="size-4 fill-accent text-accent" />{Number(shop.rating.average).toFixed(1)} <span className="text-sm font-normal text-muted">({shop.rating.count})</span></span>
             ) : null}
-          </div>
-          <h1 className="display mt-6 text-[52px] leading-[0.95] sm:text-[76px]">{shop.name}</h1>
-          {shop.tagline && <p className="mt-3 max-w-xl text-lg text-muted">{shop.tagline}</p>}
-          <div className="mt-5 flex flex-wrap gap-x-5 gap-y-2 text-sm text-muted">
-            {addr && <span className="inline-flex items-center gap-1.5"><MapPin className="size-4" />{addr}</span>}
-            <OpenNow shop={shop} />
-            {shop.phone && <a href={`tel:${shop.phone}`} className="inline-flex items-center gap-1.5 hover:text-ink"><Phone className="size-4" />{shop.phone}</a>}
-            {shop.instagram && (
-              <a href={`https://instagram.com/${shop.instagram.replace('@', '')}`} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 hover:text-ink">
-                <AtSign className="size-4" />{shop.instagram}
-              </a>
-            )}
-          </div>
-          <div className="mt-8 hidden sm:block">
-            <Link to={`/s/${shop.slug}/book`}><Button size="xl">BOOK YOUR CUT</Button></Link>
+            {city && <span className="inline-flex items-center gap-1 text-muted"><MapPin className="size-4" />{city}</span>}
+            <span className={cx('inline-flex items-center gap-1.5', openNow ? 'text-success' : 'text-danger')}>
+              <span className={cx('size-2 rounded-full', openNow ? 'bg-success pulse-ring' : 'bg-danger')} />
+              {openNow ? 'OPEN NOW' : 'CLOSED NOW'}
+            </span>
           </div>
         </div>
       </section>
 
-      <div className="mx-auto max-w-5xl space-y-14 px-5 pb-32 pt-10">
-        {shop.booking.enabled && shop.services.length > 0 && <AvailableNow shop={shop} />}
-
+      <div className="mx-auto max-w-3xl space-y-12 px-5 pb-36 pt-8">
+        {/* Choose your barber — live */}
         <section>
-          <SectionTitle>Services</SectionTitle>
-          <div className="grid gap-3 sm:grid-cols-2">
-            {shop.services.map((s) => (
-              <Link key={s.id} to={`/s/${shop.slug}/book?service=${s.id}`}>
-                <Card className="group flex items-center justify-between gap-4 p-5 transition hover:border-accent">
-                  <div className="min-w-0">
-                    <div className="font-semibold">{s.name}</div>
-                    <div className="mt-1 text-sm text-muted">{minutes(s.duration_minutes)}{s.description ? ` · ${s.description}` : ''}</div>
-                  </div>
-                  <div className="text-right">
-                    <div className="font-semibold tnum">
-                      {s.min_price_cents !== null && s.max_price_cents !== null && s.min_price_cents !== s.max_price_cents
-                        ? `${money(s.min_price_cents)}–${money(s.max_price_cents)}`
-                        : money(s.min_price_cents ?? s.price_cents)}
-                    </div>
-                    <div className="text-xs font-semibold text-accent opacity-0 transition group-hover:opacity-100">Book →</div>
-                  </div>
-                </Card>
-              </Link>
+          <div className="mb-4 flex items-end justify-between">
+            <h2 className="text-[13px] font-bold tracking-[0.16em] text-muted">CHOOSE YOUR BARBER</h2>
+            <span className="text-[11px] text-faint">Live · updates automatically</span>
+          </div>
+          <div className="space-y-3">
+            {shop.barbers.length === 0 && <Card className="p-6 text-center text-sm text-muted">No barbers are taking bookings right now.</Card>}
+            {shop.barbers.map((b) => (
+              <BarberLiveCard key={b.id} shop={shop} barber={b} live={live?.barbers.find((x) => x.barber_id === b.id)} queueOn={queueOn} />
             ))}
           </div>
         </section>
 
+        {/* Walk-in queue */}
+        {queueOn && live && (
+          <section>
+            <Card className="overflow-hidden">
+              <div className="flex items-start gap-4 p-5">
+                <span className="flex size-11 shrink-0 items-center justify-center rounded-2xl bg-info/12 text-info"><Users className="size-5" /></span>
+                <div className="min-w-0 flex-1">
+                  <div className="text-[13px] font-bold tracking-[0.16em] text-muted">WALK-IN</div>
+                  {live.walk_ins.estimated_wait_minutes === null ? (
+                    <div className="mt-1 text-lg font-semibold">No barbers on the floor right now</div>
+                  ) : (
+                    <>
+                      <div className="mt-1 text-sm text-muted">Current estimated wait</div>
+                      <div className="text-3xl font-bold tnum">{live.walk_ins.estimated_wait_minutes === 0 ? 'No wait' : `${live.walk_ins.estimated_wait_minutes} min`}</div>
+                    </>
+                  )}
+                  <div className="mt-3 grid grid-cols-2 gap-3 text-sm">
+                    <div><div className="text-muted">People ahead</div><div className="text-lg font-semibold tnum">{live.walk_ins.waiting}</div></div>
+                    <div><div className="text-muted">Average service</div><div className="text-lg font-semibold tnum">{live.walk_ins.avg_service_minutes} min</div></div>
+                  </div>
+                </div>
+              </div>
+              {live.walk_ins.estimated_wait_minutes !== null && (
+                <Link to={`/shop/${shop.slug}/queue`} className="block border-t border-line p-3">
+                  <Button size="lg" block variant="secondary" icon={<Timer className="size-4" />}>JOIN QUEUE</Button>
+                </Link>
+              )}
+            </Card>
+          </section>
+        )}
+
+        {/* Services & prices */}
         <section>
-          <SectionTitle>Barbers</SectionTitle>
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {shop.barbers.map((b) => (
-              <BarberCard key={b.id} shop={shop} barber={b} />
+          <h2 className="mb-4 text-[13px] font-bold tracking-[0.16em] text-muted">SERVICES</h2>
+          <Card className="divide-y divide-line">
+            {shop.services.map((s) => (
+              <Link key={s.id} to={`/shop/${shop.slug}/book?service=${s.id}`} className="flex items-center justify-between gap-4 px-5 py-4 transition hover:bg-surface-2">
+                <div className="min-w-0">
+                  <div className="font-semibold">{s.name}</div>
+                  <div className="mt-0.5 text-sm text-muted">{minutes(s.duration_minutes)}{s.description ? ` · ${s.description}` : ''}</div>
+                </div>
+                <div className="shrink-0 text-right font-semibold tnum">
+                  {s.min_price_cents !== null && s.max_price_cents !== null && s.min_price_cents !== s.max_price_cents
+                    ? `${money(s.min_price_cents, { cents: false })}–${money(s.max_price_cents, { cents: false })}`
+                    : money(s.min_price_cents ?? s.price_cents, { cents: false })}
+                </div>
+              </Link>
             ))}
-          </div>
+          </Card>
         </section>
 
         {shop.reviews.length > 0 && (
           <section>
-            <SectionTitle>
-              What clients say
-              {shop.rating.count ? <span className="ml-3 align-middle text-base font-normal text-muted">★ {Number(shop.rating.average).toFixed(1)} · {shop.rating.count} reviews</span> : null}
-            </SectionTitle>
-            <div className="grid gap-4 sm:grid-cols-2">
-              {shop.reviews.slice(0, 6).map((r, i) => (
-                <Card key={i} className="p-5">
+            <h2 className="mb-4 text-[13px] font-bold tracking-[0.16em] text-muted">
+              REVIEWS {shop.rating.count ? <span className="ml-2 font-semibold normal-case tracking-normal text-ink">★ {Number(shop.rating.average).toFixed(1)} · {shop.rating.count}</span> : null}
+            </h2>
+            <div className="no-scrollbar -mx-5 flex snap-x gap-3 overflow-x-auto px-5 pb-1">
+              {shop.reviews.slice(0, 8).map((r, i) => (
+                <Card key={i} className="w-[280px] shrink-0 snap-start p-5">
                   <div className="flex text-accent">{Array.from({ length: 5 }, (_, j) => <Star key={j} className={cx('size-4', j < r.rating ? 'fill-current' : 'opacity-25')} />)}</div>
-                  <p className="mt-3 text-[15px] leading-relaxed">“{r.comment}”</p>
+                  <p className="mt-3 line-clamp-4 text-[15px] leading-relaxed">“{r.comment}”</p>
                   <p className="mt-3 text-xs text-muted">{r.client_name}{r.barber_name ? ` · cut by ${r.barber_name}` : ''}</p>
                   {r.owner_reply && <p className="mt-3 border-l-2 border-accent pl-3 text-sm text-muted">{r.owner_reply}</p>}
                 </Card>
@@ -119,7 +183,7 @@ export default function ShopPage() {
 
         <section className="grid gap-6 md:grid-cols-2">
           <div>
-            <SectionTitle>Hours</SectionTitle>
+            <h2 className="mb-4 text-[13px] font-bold tracking-[0.16em] text-muted">HOURS</h2>
             <Card className="divide-y divide-line">
               {[1, 2, 3, 4, 5, 6, 0].map((d) => {
                 const h = shop.hours.filter((x) => x.weekday === d)
@@ -133,153 +197,128 @@ export default function ShopPage() {
               })}
             </Card>
           </div>
-          {addr && (
-            <div>
-              <SectionTitle>Find us</SectionTitle>
-              <Card className="overflow-hidden">
-                <iframe
-                  title="Map"
-                  loading="lazy"
-                  className="h-64 w-full border-0 grayscale-[30%]"
-                  src={`https://www.google.com/maps?q=${encodeURIComponent(shop.latitude && shop.longitude ? `${shop.latitude},${shop.longitude}` : `${shop.name} ${addr}`)}&output=embed`}
-                />
-                <a className="block px-5 py-3 text-sm font-medium hover:bg-surface-2" target="_blank" rel="noreferrer" href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${shop.name} ${addr}`)}`}>
-                  Get directions →
-                </a>
-              </Card>
-            </div>
-          )}
+          <div>
+            <h2 className="mb-4 text-[13px] font-bold tracking-[0.16em] text-muted">LOCATION</h2>
+            <Card className="overflow-hidden">
+              {addr && (
+                <iframe title="Map" loading="lazy" className="h-48 w-full border-0 grayscale-[30%]"
+                  src={`https://www.google.com/maps?q=${encodeURIComponent(shop.latitude && shop.longitude ? `${shop.latitude},${shop.longitude}` : `${shop.name} ${addr}`)}&output=embed`} />
+              )}
+              <div className="space-y-2.5 p-5 text-sm">
+                {addr && <a className="flex items-center gap-2 hover:text-accent" target="_blank" rel="noreferrer" href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${shop.name} ${addr}`)}`}><MapPin className="size-4 text-muted" />{addr}</a>}
+                {shop.phone && <a href={`tel:${shop.phone}`} className="flex items-center gap-2 hover:text-accent"><Phone className="size-4 text-muted" />{shop.phone}</a>}
+                {shop.instagram && <a href={`https://instagram.com/${shop.instagram.replace('@', '')}`} target="_blank" rel="noreferrer" className="flex items-center gap-2 hover:text-accent"><AtSign className="size-4 text-muted" />{shop.instagram}</a>}
+                {shop.website && <a href={shop.website} target="_blank" rel="noreferrer" className="flex items-center gap-2 hover:text-accent"><Globe className="size-4 text-muted" />{shop.website.replace(/^https?:\/\//, '')}</a>}
+                <button onClick={() => setQrOpen(true)} className="flex items-center gap-2 hover:text-accent"><QrCode className="size-4 text-muted" />Shop QR code</button>
+              </div>
+            </Card>
+          </div>
         </section>
         {shop.description && <p className="max-w-2xl text-muted">{shop.description}</p>}
         <PublicFooter />
       </div>
 
-      {/* Sticky mobile CTA */}
-      <div className="safe-bottom fixed inset-x-0 bottom-0 z-30 border-t border-line bg-surface/92 p-3 backdrop-blur-md sm:hidden">
-        <Link to={`/s/${shop.slug}/book`}><Button size="xl" block>BOOK YOUR CUT</Button></Link>
+      {/* Sticky CTA */}
+      <div className="safe-bottom fixed inset-x-0 bottom-0 z-30 border-t border-line bg-surface/92 p-3 backdrop-blur-md">
+        <div className="mx-auto flex max-w-3xl gap-2">
+          <Link to={`/shop/${shop.slug}/book`} className="flex-1"><Button size="xl" block>BOOK YOUR CUT</Button></Link>
+          {queueOn && live?.walk_ins.estimated_wait_minutes !== null && (
+            <Link to={`/shop/${shop.slug}/queue`}><Button size="xl" variant="secondary" aria-label="Join walk-in queue"><Users className="size-5" /></Button></Link>
+          )}
+        </div>
       </div>
+
+      <Sheet open={qrOpen} onClose={() => setQrOpen(false)} title="Book your cut">
+        <div className="flex flex-col items-center gap-4 pb-4 text-center">
+          <QrImage value={shopUrl} size={240} />
+          <div className="text-sm text-muted">Scan to open {shop.name}. No app needed.</div>
+          <code className="rounded-lg bg-surface-2 px-3 py-1.5 text-xs">{shopUrl.replace(/^https?:\/\//, '')}</code>
+        </div>
+      </Sheet>
     </div>
   )
 }
 
-function fmt12(t: string) {
-  const [h, m] = t.split(':').map(Number)
-  return `${h % 12 === 0 ? 12 : h % 12}${m ? `:${String(m).padStart(2, '0')}` : ''}${h >= 12 ? 'pm' : 'am'}`
-}
-
-function SectionTitle({ children }: { children: React.ReactNode }) {
-  return <h2 className="display mb-5 text-[32px] leading-none">{children}</h2>
-}
-
-function OpenNow({ shop }: { shop: PublicShop }) {
-  const now = new Date()
-  const wd = WEEKDAY_NAMES.indexOf(now.toLocaleDateString('en-US', { timeZone: shop.timezone, weekday: 'long' }))
-  const hm = now.toLocaleTimeString('en-GB', { timeZone: shop.timezone, hour: '2-digit', minute: '2-digit' })
-  const open = shop.hours.some((h) => h.weekday === wd && h.opens_at.slice(0, 5) <= hm && hm < h.closes_at.slice(0, 5))
+function BarberLiveCard({ shop, barber, live, queueOn }: {
+  shop: PublicShop; barber: PublicShop['barbers'][number]; live: ShopLive['barbers'][number] | undefined; queueOn: boolean
+}) {
+  const status = live?.status
+  const muted = status === 'NOT_WORKING' || status === 'OFFLINE'
+  const lines = live ? liveLines(live, shop.timezone) : []
+  const next = live ? nextAvailableLabel(live, shop.timezone) : null
+  const canQueue = queueOn && live && ['AVAILABLE', 'QUEUE', 'CUTTING', 'BOOKED', 'BREAK'].includes(live.status)
+  const queueFirst = live?.status === 'QUEUE'
   return (
-    <span className="inline-flex items-center gap-1.5">
-      <Clock className="size-4" />
-      <span className={open ? 'text-success' : ''}>{open ? 'Open now' : 'Closed now'}</span>
-    </span>
-  )
-}
-
-/** Real-time availability strip: today's open times per barber. */
-function AvailableNow({ shop }: { shop: PublicShop }) {
-  const [serviceId, setServiceId] = useState(shop.services[0]?.id)
-  const today = todayInTz(shop.timezone)
-  const { data: slots, isLoading } = useSlots(shop.id, serviceId ? [serviceId] : [], today, null)
-  const { data: first } = useFirstAvailable(shop.id, serviceId ? [serviceId] : [], today, 14)
-  const byBarber = useMemo(() => {
-    const m = new Map<string, string[]>()
-    for (const s of slots ?? []) m.set(s.barber_id, [...(m.get(s.barber_id) ?? []), s.starts_at])
-    return m
-  }, [slots])
-
-  return (
-    <section>
-      <div className="mb-5 flex flex-wrap items-end justify-between gap-3">
-        <h2 className="display text-[32px] leading-none">Available today</h2>
-        <div className="no-scrollbar -mx-5 flex gap-2 overflow-x-auto px-5">
-          {shop.services.slice(0, 6).map((s) => (
-            <Chip key={s.id} active={s.id === serviceId} onClick={() => setServiceId(s.id)}>{s.name}</Chip>
-          ))}
+    <Card className={cx('p-4 transition', live && LIVE[live.status].ring, muted && 'opacity-70')}>
+      <div className="flex items-start gap-4">
+        <Link to={`/shop/${shop.slug}/barber/${barber.slug}`} className="shrink-0">
+          <Avatar name={barber.name} src={barber.photo_url} size={56} />
+        </Link>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-start justify-between gap-2">
+            <Link to={`/shop/${shop.slug}/barber/${barber.slug}`} className="min-w-0">
+              <div className="truncate text-lg font-bold leading-tight">{barber.name}</div>
+              {barber.title && <div className="truncate text-[13px] text-muted">{barber.title}</div>}
+            </Link>
+            {barber.review_count > 0 && (
+              <span className="inline-flex shrink-0 items-center gap-1 text-sm font-semibold"><Star className="size-3.5 fill-accent text-accent" />{Number(barber.rating).toFixed(1)}</span>
+            )}
+          </div>
+          <div className="mt-2">{live ? <LivePill status={live.status} /> : <Skeleton className="h-4 w-24" />}</div>
+          <div className="mt-1.5 space-y-0.5 text-[13px] text-muted">
+            {lines.map((l) => <div key={l}>{l}</div>)}
+            {next && <div>Next available: <b className="text-ink">{next}</b></div>}
+            {live?.avg_cut_minutes ? <div className="inline-flex items-center gap-1"><Clock className="size-3" />Average cut: {live.avg_cut_minutes} min</div> : null}
+          </div>
         </div>
       </div>
-      <Card className="divide-y divide-line">
-        {isLoading && <div className="p-5"><Skeleton className="h-10" /></div>}
-        {shop.barbers.map((b) => {
-          if (!b.services.some((s) => s.service_id === serviceId)) return null
-          const times = byBarber.get(b.id) ?? []
-          const next = first?.find((f) => f.barber_id === b.id)
-          return (
-            <div key={b.id} className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center">
-              <div className="flex w-44 items-center gap-3">
-                <Avatar name={b.name} src={b.photo_url} size={40} />
-                <div className="min-w-0">
-                  <div className="truncate font-semibold">{b.name}</div>
-                  {b.title && <div className="truncate text-xs text-muted">{b.title}</div>}
-                </div>
-              </div>
-              <div className="no-scrollbar flex flex-1 gap-2 overflow-x-auto">
-                {times.length ? (
-                  times.slice(0, 8).map((t) => (
-                    <Link key={t} to={`/s/${shop.slug}/book?service=${serviceId}&barber=${b.id}&date=${today}&time=${encodeURIComponent(t)}`}
-                      className="shrink-0 rounded-full border border-line px-3.5 py-1.5 text-sm font-semibold tnum transition hover:border-accent hover:bg-accent-soft">
-                      {time(t, shop.timezone)}
-                    </Link>
-                  ))
-                ) : next ? (
-                  <Link to={`/s/${shop.slug}/book?service=${serviceId}&barber=${b.id}&time=${encodeURIComponent(next.starts_at)}`} className="text-sm text-muted hover:text-ink">
-                    Next available: <b className="text-ink">{relativeDay(next.starts_at, shop.timezone)} {time(next.starts_at, shop.timezone)}</b>
-                  </Link>
-                ) : (
-                  <span className="text-sm text-muted">No openings in the next two weeks</span>
-                )}
-              </div>
-            </div>
-          )
-        })}
-      </Card>
-    </section>
-  )
-}
-
-function BarberCard({ shop, barber }: { shop: PublicShop; barber: PublicShop['barbers'][number] }) {
-  const { data: first } = useFirstAvailable(shop.id, barber.services[0] ? [barber.services[0].service_id] : [])
-  const next = first?.find((f) => f.barber_id === barber.id)
-  return (
-    <Card className="flex flex-col p-5">
-      <Link to={`/s/${shop.slug}/barber/${barber.slug}`} className="flex items-center gap-4">
-        <Avatar name={barber.name} src={barber.photo_url} size={64} />
-        <div className="min-w-0">
-          <div className="text-lg font-semibold">{barber.name}</div>
-          {barber.title && <div className="text-sm text-muted">{barber.title}</div>}
-          {barber.review_count > 0 && (
-            <div className="mt-1 flex items-center gap-1 text-sm"><Star className="size-3.5 fill-accent text-accent" /> {Number(barber.rating).toFixed(1)} <span className="text-muted">({barber.review_count})</span></div>
-          )}
+      <div className="mt-4 flex gap-2">
+        {queueFirst && canQueue ? (
+          <>
+            <Link to={`/shop/${shop.slug}/queue?barber=${barber.id}`} className="flex-1"><Button block>JOIN QUEUE</Button></Link>
+            <Link to={`/shop/${shop.slug}/book?barber=${barber.id}`}><Button variant="outline">BOOK</Button></Link>
+          </>
+        ) : (
+          <>
+            <Link to={`/shop/${shop.slug}/book?barber=${barber.id}`} className="flex-1"><Button block variant={muted ? 'outline' : 'primary'}>BOOK {barber.name.split(' ')[0].toUpperCase()}</Button></Link>
+            {canQueue && live?.status === 'AVAILABLE' && (
+              <Link to={`/shop/${shop.slug}/queue?barber=${barber.id}`}><Button variant="outline">WALK IN</Button></Link>
+            )}
+          </>
+        )}
+      </div>
+      {barber.services.length > 0 && (
+        <div className="no-scrollbar -mx-4 mt-3 flex gap-1.5 overflow-x-auto px-4">
+          {barber.services.slice(0, 5).map((s) => {
+            const svc = shop.services.find((x) => x.id === s.service_id)
+            return svc ? <Badge key={s.service_id} className="normal-case tracking-normal">{svc.name} · {money(s.price_cents, { cents: false })}</Badge> : null
+          })}
         </div>
-      </Link>
-      {barber.specialties.length > 0 && (
-        <div className="mt-4 flex flex-wrap gap-1.5">{barber.specialties.slice(0, 4).map((s) => <Badge key={s}>{s}</Badge>)}</div>
       )}
-      <div className="mt-auto pt-5">
-        <div className="mb-3 text-sm text-muted">
-          {next ? <>Next available: <b className="text-ink">{relativeDay(next.starts_at, shop.timezone)} {time(next.starts_at, shop.timezone)}</b></> : 'Fully booked for now'}
-        </div>
-        <Link to={`/s/${shop.slug}/book?barber=${barber.id}`}><Button variant="outline" block>Book with {barber.name.split(' ')[0]}</Button></Link>
-      </div>
     </Card>
   )
 }
 
+function isOpenNow(shop: PublicShop) {
+  const now = new Date()
+  const wd = WEEKDAY_NAMES.indexOf(now.toLocaleDateString('en-US', { timeZone: shop.timezone, weekday: 'long' }))
+  const hm = now.toLocaleTimeString('en-GB', { timeZone: shop.timezone, hour: '2-digit', minute: '2-digit' })
+  return shop.hours.some((h) => h.weekday === wd && h.opens_at.slice(0, 5) <= hm && hm < h.closes_at.slice(0, 5))
+}
+
+export function fmt12(t: string) {
+  const [h, m] = t.split(':').map(Number)
+  return `${h % 12 === 0 ? 12 : h % 12}${m ? `:${String(m).padStart(2, '0')}` : ''}${h >= 12 ? 'pm' : 'am'}`
+}
+
 function ShopSkeleton() {
   return (
-    <div className="mx-auto max-w-5xl space-y-6 px-5 py-12">
-      <Skeleton className="size-14" />
-      <Skeleton className="h-16 w-2/3" />
+    <div className="mx-auto max-w-3xl space-y-6 px-5 py-12">
+      <Skeleton className="size-16" />
+      <Skeleton className="h-10 w-2/3" />
       <Skeleton className="h-5 w-1/2" />
-      <Skeleton className="h-40" />
+      <Skeleton className="h-32" />
+      <Skeleton className="h-32" />
     </div>
   )
 }

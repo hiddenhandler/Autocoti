@@ -62,7 +62,7 @@ export default function ClientHome() {
 }
 
 function BookAgain({ a, compact }: { a: MyAppointment; compact?: boolean }) {
-  const href = `/s/${a.shop_slug}/book?service=${a.service_ids[0] ?? ''}&barber=${a.barber_id}&rebook=${a.id}`
+  const href = `/shop/${a.shop_slug}/book?service=${a.service_ids[0] ?? ''}&barber=${a.barber_id}&rebook=${a.id}`
   if (compact)
     return (
       <Link to={href}>
@@ -93,7 +93,7 @@ function FavoriteCard({ f }: { f: { barber_id: string; barber_name: string; phot
   const { data: first } = useFirstAvailable(f.shop_id, svc ? [svc] : [])
   const next = first?.find((s) => s.barber_id === f.barber_id)
   return (
-    <Link to={`/s/${f.shop_slug}/book?barber=${f.barber_id}${svc ? `&service=${svc}` : ''}`}>
+    <Link to={`/shop/${f.shop_slug}/book?barber=${f.barber_id}${svc ? `&service=${svc}` : ''}`}>
       <Card className="flex items-center gap-3 p-4 transition hover:border-accent">
         <Avatar name={f.barber_name} src={f.photo_url} size={40} />
         <div className="min-w-0 flex-1"><div className="font-semibold">{f.barber_name}</div><div className="truncate text-xs text-muted">{f.shop_name}</div></div>

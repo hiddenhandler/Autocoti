@@ -176,7 +176,7 @@ export function AppointmentSheet({ appt, onClose }: { appt: Appointment | null; 
               {a.status === 'IN_SERVICE' && (
                 <Button size="xl" block icon={<Square className="size-5" />} loading={busy === 'finish'}
                   onClick={() => act('finish', async () => { await rpc('finish_cut', { p_appointment_id: a.id }); setCheckout(true) })}>
-                  FINISH CUT
+                  COMPLETE CUT
                 </Button>
               )}
               {a.status === 'COMPLETED' && a.payment_status === 'UNPAID' && (can('payments.record') || ws.barber_id === a.barber_id) && (

@@ -14,7 +14,7 @@ import { corsHeaders, json } from '../_shared/http.ts'
 const MODEL = 'claude-opus-5-5'
 const MAX_TURNS = 6
 
-const SYSTEM = `You are the business analyst inside Autocoti, a barbershop management app.
+const SYSTEM = `You are the business analyst inside BarberNGo, a barbershop management app.
 You answer the shop owner's questions about their business.
 
 Rules:

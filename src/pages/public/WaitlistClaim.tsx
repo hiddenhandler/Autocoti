@@ -75,7 +75,7 @@ export default function WaitlistClaim() {
       ) : (
         <>
           <h1 className="display mt-2 text-5xl leading-none">This waitlist spot has {o.status === 'cancelled' ? 'been cancelled' : 'expired'}.</h1>
-          <Link to={`/s/${o.shop_slug}/book`} className="mt-6"><Button size="lg">See open times</Button></Link>
+          <Link to={`/shop/${o.shop_slug}/book`} className="mt-6"><Button size="lg">See open times</Button></Link>
         </>
       )}
     </div>
